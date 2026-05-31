@@ -1,18 +1,21 @@
 import { useState } from "react";
-import { CONTESTANTS, PreVote } from "./types";
+import { PreVote } from "./types";
 import FlagSvg from "./flags";
 
 // Низкие баллы в порядке назначения: 1→7 (от меньшего к большему)
 const LOW_PTS = [1, 2, 3, 4, 5, 6, 7];
 
+type CountryItem = { id: string; name: string; cc: string };
+
 type Props = {
   voterCc: string;
   voterName: string;
-  voterCountryId: string;        // ID голосующей страны (нельзя голосовать за неё)
+  voterCountryId: string;
+  contestants: CountryItem[];
   onConfirm: (votes: PreVote[]) => void;
 };
 
-export default function PreSelectionScreen({ voterCc, voterName, voterCountryId, onConfirm }: Props) {
+export default function PreSelectionScreen({ voterCc, voterName, voterCountryId, contestants, onConfirm }: Props) {
   // selections[i] = id страны, которой назначен LOW_PTS[i], или null
   const [selections, setSelections] = useState<(string | null)[]>(Array(7).fill(null));
   // Какой балл сейчас выбираем (индекс в LOW_PTS, -1 = подтверждение)
@@ -83,7 +86,7 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
       }}>
         {LOW_PTS.map((pts, idx) => {
           const selId   = selections[idx];
-          const selEntry = CONTESTANTS.find(c => c.id === selId);
+          const selEntry = contestants.find(c => c.id === selId);
           const isActive = idx === activePtsIdx;
           const isDone   = selId !== null;
           return (
@@ -166,7 +169,7 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
         overflow: "hidden",
         boxShadow: "0 6px 40px rgba(0,0,0,0.7)",
       }}>
-        {CONTESTANTS.map((c, idx) => {
+        {contestants.map((c, idx) => {
           const isVoter   = c.id === voterCountryId;
           const isSelected = usedIds.has(c.id);
           const selPts    = selections.findIndex(s => s === c.id);

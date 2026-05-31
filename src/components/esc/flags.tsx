@@ -324,6 +324,100 @@ export const RS = (p: FlagProps) => <Flag {...p}>
   <text x="12" y="16.5" textAnchor="middle" fontSize="6" fill="#FFD700">⚜</text>
 </Flag>;
 
+// ── Дополнительные страны ESC ─────────────────────────────────────────────
+
+// Андорра (AD)
+export const AD = (p: FlagProps) => <Flag {...p}>
+  <rect width="13.3" height="27" fill="#003DA5"/>
+  <rect x="13.3" width="13.4" height="27" fill="#FFD700"/>
+  <rect x="26.7" width="13.3" height="27" fill="#C60B1E"/>
+</Flag>;
+
+// Австралия (AU)
+export const AU = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="27" fill="#00008B"/>
+  <rect x="0" y="0" width="20" height="13.5" fill="#00008B"/>
+  <line x1="0" y1="0" x2="20" y2="13.5" stroke="#fff" strokeWidth="4"/>
+  <line x1="20" y1="0" x2="0" y2="13.5" stroke="#fff" strokeWidth="4"/>
+  <line x1="0" y1="0" x2="20" y2="13.5" stroke="#C8102E" strokeWidth="2.5"/>
+  <line x1="20" y1="0" x2="0" y2="13.5" stroke="#C8102E" strokeWidth="2.5"/>
+  <rect x="8" y="0" width="4" height="13.5" fill="#fff"/>
+  <rect x="0" y="4.75" width="20" height="4" fill="#fff"/>
+  <rect x="9" y="0" width="2" height="13.5" fill="#C8102E"/>
+  <rect x="0" y="5.75" width="20" height="2" fill="#C8102E"/>
+  <circle cx="30" cy="18" r="2" fill="#fff"/>
+  <circle cx="35" cy="13" r="1.5" fill="#fff"/>
+  <circle cx="37" cy="20" r="1.5" fill="#fff"/>
+  <circle cx="32" cy="23" r="1.5" fill="#fff"/>
+</Flag>;
+
+// Босния и Герцеговина (BA)
+export const BA = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="27" fill="#003DA5"/>
+  <polygon points="10,0 32,0 32,27" fill="#FFD700"/>
+  {[0,1,2,3,4,5,6,7].map(i => (
+    <circle key={i} cx={12 + i*2.8} cy={i*3.2} r="1.2" fill="#fff"/>
+  ))}
+</Flag>;
+
+// Чехия (CZ)
+export const CZ = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="13.5" fill="#fff"/>
+  <rect y="13.5" width="40" height="13.5" fill="#D7141A"/>
+  <polygon points="0,0 20,13.5 0,27" fill="#11457E"/>
+</Flag>;
+
+// Грузия (GE)
+export const GE = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="27" fill="#fff"/>
+  <rect x="17" y="0" width="6" height="27" fill="#FF0000"/>
+  <rect x="0" y="10.5" width="40" height="6" fill="#FF0000"/>
+  <rect x="3" y="2" width="5" height="5" fill="#FF0000" opacity="0.7"/>
+  <rect x="32" y="2" width="5" height="5" fill="#FF0000" opacity="0.7"/>
+  <rect x="3" y="20" width="5" height="5" fill="#FF0000" opacity="0.7"/>
+  <rect x="32" y="20" width="5" height="5" fill="#FF0000" opacity="0.7"/>
+</Flag>;
+
+// Ирландия (IE)
+export const IE = (p: FlagProps) => <Flag {...p}>
+  <rect width="13.3" height="27" fill="#169B62"/>
+  <rect x="13.3" width="13.4" height="27" fill="#fff"/>
+  <rect x="26.7" width="13.3" height="27" fill="#FF883E"/>
+</Flag>;
+
+// Люксембург (LU)
+export const LU = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="9" fill="#EF3340"/>
+  <rect y="9" width="40" height="9" fill="#fff"/>
+  <rect y="18" width="40" height="9" fill="#00A3E0"/>
+</Flag>;
+
+// Монако (MC)
+export const MC = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="13.5" fill="#CE1126"/>
+  <rect y="13.5" width="40" height="13.5" fill="#fff"/>
+</Flag>;
+
+// Северная Македония (MK)
+export const MK = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="27" fill="#CE2028"/>
+  <circle cx="20" cy="13.5" r="5" fill="#FFD100"/>
+  <line x1="0" y1="0" x2="40" y2="27" stroke="#FFD100" strokeWidth="3"/>
+  <line x1="40" y1="0" x2="0" y2="27" stroke="#FFD100" strokeWidth="3"/>
+  <line x1="20" y1="0" x2="20" y2="27" stroke="#FFD100" strokeWidth="3"/>
+  <line x1="0" y1="13.5" x2="40" y2="13.5" stroke="#FFD100" strokeWidth="3"/>
+  <circle cx="20" cy="13.5" r="5" fill="#FFD100"/>
+  <circle cx="20" cy="13.5" r="3" fill="#CE2028"/>
+</Flag>;
+
+// Турция (TR)
+export const TR = (p: FlagProps) => <Flag {...p}>
+  <rect width="40" height="27" fill="#E30A17"/>
+  <circle cx="17" cy="13.5" r="5.5" fill="#fff"/>
+  <circle cx="18.8" cy="13.5" r="4.2" fill="#E30A17"/>
+  <polygon points="24,13.5 27,12 26,14.5 27.5,16.5 25,15.5" fill="#fff"/>
+</Flag>;
+
 // ── Карта: cc → компонент ─────────────────────────────────────────────────
 const FLAGS: Record<string, React.FC<FlagProps>> = {
   at: AT, az: AZ, am: AM, dk: DK, nl: NL, hu: HU,
@@ -332,7 +426,10 @@ const FLAGS: Record<string, React.FC<FlagProps>> = {
   gb: GB, fr: FR, de: DE, it: IT, ua: UA, mt: MT,
   pl: PL, si: SI, al: AL, by: BY, be: BE, hr: HR,
   cy: CY, lv: LV, lt: LT, md: MD, me: ME, ro: RO,
-  sm: SM, rs: RS, mk: AL, // Македония — временно как AL
+  sm: SM, rs: RS, mk: MK,
+  // Дополнительные
+  ad: AD, au: AU, ba: BA, cz: CZ, ge: GE, ie: IE,
+  lu: LU, mc: MC, tr: TR,
 };
 
 // ── Главный компонент ─────────────────────────────────────────────────────

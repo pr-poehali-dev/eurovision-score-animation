@@ -30,7 +30,7 @@ export function useCountUp(target: number, duration = 1200): number {
 
 // ── Строка таблицы ──
 export function ScoreRow({
-  entry, isVoter, alreadyVoted, hasNext, onClick, isLeader,
+  entry, isVoter, alreadyVoted, hasNext, onClick, isLeader, isPushed,
 }: {
   entry:        Entry;
   isVoter:      boolean;
@@ -38,11 +38,17 @@ export function ScoreRow({
   hasNext:      boolean;
   onClick:      (id: string) => void;
   isLeader:     boolean;
+  isPushed?:    boolean;
 }) {
   const displayScore = useCountUp(entry.score, 1200);
   const isFlash      = entry.flashedByVoter !== null;
   const is12         = entry.is12;
   const unclickable  = isVoter || alreadyVoted || !hasNext;
+
+  // Цвет заливки слева направо при isPushed
+  const pushBg = is12
+    ? "rgba(220,120,0,0.75)"
+    : "rgba(0,120,255,0.65)";
 
   return (
     <div
@@ -59,12 +65,25 @@ export function ScoreRow({
         borderBottom: "1px solid rgba(255,255,255,0.055)",
         cursor:     unclickable ? "default" : "pointer",
         opacity:    isVoter ? 0.42 : 1,
-        transition: "background 0.4s ease, opacity 0.3s",
+        transition: "background 0.4s ease, opacity 0.3s, transform 0.3s ease, box-shadow 0.3s ease",
         position:   "relative",
         userSelect: "none",
         boxSizing:  "border-box",
+        // Выдвижение вперёд при isPushed
+        transform:  isPushed ? "scale(1.03) translateX(5px)" : "scale(1) translateX(0)",
+        zIndex:     isPushed ? 50 : "auto",
+        boxShadow:  isPushed ? "6px 0 24px rgba(0,100,255,0.45), 0 2px 12px rgba(0,0,0,0.5)" : "none",
+        overflow:   "hidden",
       }}
     >
+      {/* Заливка слева направо при isPushed */}
+      {isPushed && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
+          background: pushBg,
+          animation: "fillLR 0.7s cubic-bezier(0.25,0.46,0.45,0.94) forwards",
+        }} />
+      )}
       {/* FLAG + cover */}
       <div
         data-flag={entry.id}
@@ -72,6 +91,7 @@ export function ScoreRow({
           width: "58px", flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
           position: "relative", height: "100%",
+          zIndex: 2,
         }}
       >
         {/* SVG флаг */}
@@ -122,10 +142,11 @@ export function ScoreRow({
       <div style={{
         flex: 1, fontSize: "15px", fontWeight: 500,
         letterSpacing: "0.07em",
-        color:      isFlash ? "#ffffff" : "rgba(180,218,255,0.92)",
+        color:      (isFlash || isPushed) ? "#ffffff" : "rgba(180,218,255,0.92)",
         fontFamily: "'Montserrat',sans-serif",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         transition: "color 0.25s",
+        position: "relative", zIndex: 2,
       }}>
         {entry.name}
       </div>
@@ -138,6 +159,7 @@ export function ScoreRow({
         color:      is12 ? "#FFD700" : isFlash ? "#7df8ff" : "#70c2f0",
         fontFamily: "'Montserrat',sans-serif",
         transition: "font-size 0.22s, color 0.22s",
+        position: "relative", zIndex: 2,
       }}>
         {displayScore > 0 ? displayScore : ""}
       </div>
