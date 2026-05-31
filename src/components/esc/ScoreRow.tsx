@@ -96,15 +96,17 @@ export function ScoreRow({
               ? "6px 0 22px rgba(255,120,0,0.55), 0 2px 12px rgba(0,0,0,0.5)"
               : "6px 0 20px rgba(0,100,255,0.5), 0 2px 10px rgba(0,0,0,0.4)"
             : "none",
-        overflow: "hidden",
+        overflow: "visible",
       }}
     >
-      {/* Заливка слева направо при isPushed */}
+      {/* Заливка слева направо при isPushed — clip к самой строке */}
       {isPushed && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
           background: pushBg,
           animation: "fillLR 0.65s cubic-bezier(0.25,0.46,0.45,0.94) forwards",
+          borderRadius: "2px",
+          overflow: "hidden",
         }} />
       )}
       {/* FLAG + cover */}
@@ -174,15 +176,24 @@ export function ScoreRow({
         {entry.name}
       </div>
 
-      {/* SCORE */}
+      {/* SCORE — всегда виден, при isPushed крупный и яркий */}
       <div style={{
-        width: "56px", textAlign: "right", flexShrink: 0,
-        fontSize:   isFlash ? "22px" : "18px",
-        fontWeight: 700,
-        color:      is12 ? "#FFD700" : isFlash ? "#7df8ff" : "#70c2f0",
+        width: isPushed ? "70px" : "56px",
+        textAlign: "right", flexShrink: 0,
+        fontSize:   isPushed ? "26px" : isFlash ? "22px" : "18px",
+        fontWeight: 900,
+        color: isPushed
+          ? (is12 ? "#FFD700" : "#ffffff")
+          : is12 ? "#FFD700" : isFlash ? "#7df8ff" : "#70c2f0",
         fontFamily: "'Montserrat',sans-serif",
-        transition: "font-size 0.22s, color 0.22s",
-        position: "relative", zIndex: 2,
+        transition: "font-size 0.22s, color 0.22s, width 0.22s",
+        position: "relative", zIndex: 10,
+        textShadow: isPushed
+          ? (is12
+            ? "0 0 12px rgba(255,200,0,0.9), 0 2px 4px rgba(0,0,0,0.8)"
+            : "0 0 10px rgba(100,200,255,0.8), 0 2px 4px rgba(0,0,0,0.8)")
+          : "none",
+        whiteSpace: "nowrap",
       }}>
         {displayScore > 0 ? displayScore : ""}
       </div>

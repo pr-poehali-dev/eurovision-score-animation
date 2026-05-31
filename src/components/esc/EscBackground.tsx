@@ -2,38 +2,44 @@ export default function EscBackground() {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", overflow: "hidden" }}>
 
-      {/* Base — насыщенный тёмно-синий */}
+      {/* Base — средне-синий, не тёмный */}
       <div style={{
         position: "absolute", inset: 0,
-        background: "linear-gradient(160deg, #00063a 0%, #020c52 25%, #08115e 50%, #04093a 100%)",
+        background: "linear-gradient(160deg, #0c1e6e 0%, #102480 25%, #152e96 50%, #0e2278 100%)",
       }} />
 
-      {/* Rotating aurora top-left */}
+      {/* Светлый центральный блик сверху */}
+      <div style={{
+        position: "absolute", inset: 0,
+        background: "radial-gradient(ellipse 90% 55% at 50% 10%, rgba(100,160,255,0.35) 0%, transparent 60%)",
+      }} />
+
+      {/* Aurora top-left — голубой */}
       <div style={{
         position: "absolute", width: "900px", height: "900px", borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(0,100,255,0.38) 0%, rgba(0,60,200,0.18) 40%, transparent 70%)",
+        background: "radial-gradient(circle, rgba(60,140,255,0.42) 0%, rgba(30,90,220,0.2) 45%, transparent 70%)",
         left: "-18%", top: "-20%",
         animation: "orb1 11s ease-in-out infinite",
+        filter: "blur(6px)",
+      }} />
+
+      {/* Aurora right — фиолетово-розовый */}
+      <div style={{
+        position: "absolute", width: "700px", height: "700px", borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(160,80,255,0.36) 0%, rgba(100,40,220,0.18) 45%, transparent 70%)",
+        right: "-12%", top: "-10%",
+        animation: "orb2 15s ease-in-out infinite",
         filter: "blur(8px)",
       }} />
 
-      {/* Rotating aurora right */}
-      <div style={{
-        position: "absolute", width: "700px", height: "700px", borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(140,0,255,0.32) 0%, rgba(80,0,200,0.15) 45%, transparent 70%)",
-        right: "-12%", top: "-10%",
-        animation: "orb2 15s ease-in-out infinite",
-        filter: "blur(10px)",
-      }} />
-
-      {/* Centre magenta pulse */}
+      {/* Centre light pulse */}
       <div style={{
         position: "absolute", width: "600px", height: "600px", borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(220,0,140,0.22) 0%, transparent 65%)",
+        background: "radial-gradient(circle, rgba(100,160,255,0.22) 0%, transparent 65%)",
         left: "50%", top: "35%",
         transform: "translateX(-50%)",
         animation: "orb3 8s ease-in-out infinite",
-        filter: "blur(14px)",
+        filter: "blur(12px)",
       }} />
 
       {/* Bright sweep beam */}

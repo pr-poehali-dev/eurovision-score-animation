@@ -123,7 +123,76 @@ function sortEntries(list: Entry[]): Entry[] {
   });
 }
 
-type Scene = "setup" | "intro" | "preselect" | "preconfirm" | "main" | "winner";
+// ─── Географические соседи (для рандом-голосования) ─────────────────────────
+// Страна голосует за соседей с повышенным весом (60%), остальные (40%) — равномерно
+const NEIGHBOURS: Record<string, string[]> = {
+  AL: ["RS","MK","ME","GR","IT"],   AM: ["AZ","GE","TR","RU"],
+  AT: ["DE","CZ","HU","SI","CH"],   AU: [],
+  AZ: ["AM","GE","RU","TR"],        BY: ["RU","UA","PL","LT","LV"],
+  BE: ["NL","FR","DE","LU"],        BA: ["HR","RS","ME"],
+  BG: ["RO","RS","MK","GR","TR"],   HR: ["SI","HU","BA","RS","ME"],
+  CY: ["GR","TR","IL"],             CZ: ["DE","AT","PL","SK"],
+  DK: ["DE","SE","NO"],             EE: ["LV","FI","RU"],
+  FI: ["SE","NO","EE","RU"],        FR: ["BE","LU","DE","CH","IT","ES","MC","AD"],
+  GE: ["RU","TR","AM","AZ"],        DE: ["DK","NL","BE","LU","FR","CH","AT","CZ","PL"],
+  GR: ["AL","MK","BG","TR","CY"],   HU: ["AT","SK","UA","RO","RS","HR","SI"],
+  IS: ["NO","DK","GB"],             IE: ["GB"],
+  IL: ["CY","GR"],                  IT: ["FR","CH","AT","SI","SM","MC"],
+  LV: ["EE","LT","RU","BY"],        LT: ["LV","BY","PL","RU"],
+  LU: ["BE","FR","DE"],             MT: ["IT"],
+  MD: ["RO","UA"],                  MC: ["FR","IT"],
+  ME: ["BA","RS","AL","HR"],        MK: ["AL","RS","BG","GR"],
+  NL: ["BE","DE"],                  NO: ["SE","FI","DK","IS"],
+  PL: ["DE","CZ","BY","UA","LT","LV","RU"], PT: ["ES"],
+  RO: ["MD","UA","HU","RS","BG"],   RU: ["NO","FI","EE","LV","LT","BY","PL","UA","GE","AZ","AM"],
+  SM: ["IT"],                       RS: ["BA","HR","HU","RO","BG","MK","ME","AL"],
+  SI: ["IT","AT","HU","HR"],        ES: ["PT","FR","AD"],
+  SE: ["NO","FI","DK"],             CH: ["DE","FR","IT","AT","LI"],
+  TR: ["GR","BG","GE","AM","AZ"],   UA: ["RU","BY","PL","SK","HU","RO","MD"],
+  GB: ["IE","IS","FR"],
+};
+
+// Генерирует рандомные голоса 1-12 с перевесом в сторону соседей
+function generateRandomVotes(
+  voterId: string,
+  contestantIds: string[],
+  allPoints: number[],   // [1,2,3,4,5,6,7,8,10,12]
+): { lowVotes: Array<{countryId: string; pts: number}>; highVotes: Array<{countryId: string; pts: number}> } {
+  const eligible = contestantIds.filter(id => id !== voterId);
+  const neighbours = (NEIGHBOURS[voterId] ?? []).filter(n => eligible.includes(n));
+
+  // Взвешенный выбор: соседи имеют вес 4, остальные — вес 1
+  const weighted: Array<{id: string; w: number}> = eligible.map(id => ({
+    id,
+    w: neighbours.includes(id) ? 4 : 1,
+  }));
+
+  const pick = (exclude: Set<string>): string => {
+    const pool = weighted.filter(x => !exclude.has(x.id));
+    const total = pool.reduce((s, x) => s + x.w, 0);
+    let r = Math.random() * total;
+    for (const x of pool) { r -= x.w; if (r <= 0) return x.id; }
+    return pool[pool.length - 1].id;
+  };
+
+  const chosen = new Set<string>();
+  const result: Array<{countryId: string; pts: number}> = [];
+  for (const pts of allPoints) {
+    const id = pick(chosen);
+    chosen.add(id);
+    result.push({ countryId: id, pts });
+  }
+
+  // low = первые 7 (pts 1-7), high = последние 3 (pts 8,10,12)
+  const lowVotes  = result.slice(0, 7);
+  const highVotes = result.slice(7);
+  return { lowVotes, highVotes };
+}
+
+// История голосов: voterIdx → массив {countryId, pts}
+type VoteRecord = { voterId: string; votes: Array<{countryId: string; pts: number}> };
+
+type Scene = "setup" | "intro" | "preselect" | "preconfirm" | "main" | "winner" | "votelog";
 
 export default function Index() {
   // ── Состояние игры ─────────────────────────────────────────────────────
@@ -140,8 +209,11 @@ export default function Index() {
   const [douzeEvent, setDouzeEvent]     = useState<DouzeEvent>(null);
   const [showTop5, setShowTop5]         = useState(false);
   const [blocked, setBlocked]           = useState(false);
-  // Для анимации строки при 8/10/12: id строки которая сейчас "выдвигается"
   const [rowPushId, setRowPushId]       = useState<string | null>(null);
+  // Лог всех голосов для таблицы итогов
+  const [voteLog, setVoteLog]           = useState<VoteRecord[]>([]);
+  // Режим авто-голосования
+  const [autoMode, setAutoMode]         = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef     = useRef<HTMLDivElement>(null);
@@ -163,6 +235,10 @@ export default function Index() {
     setVoters(v);
     setEntries(c.map(x => ({ ...x, score: 0, flashedByVoter: null, is12: false, coveredPts: null, recentPts: [] })));
     setVoterIdx(0);
+    setVoteLog([]);
+    setAutoMode(false);
+    setPreVotes({});
+    setHighHistory({});
     setScene("intro");
     setTableVisible(false);
   }, []);
@@ -318,6 +394,11 @@ export default function Index() {
         }
 
         if (isLast) {
+          // Записываем все голоса этого воутера в лог
+          const lowVotes = preVotes[voterIdx] ?? [];
+          const allVotes = [...lowVotes, ...newHistory.map(h => ({ countryId: h.id, pts: h.pts }))];
+          setVoteLog(prev => [...prev, { voterId: voter?.id ?? "", votes: allVotes }]);
+
           setTimeout(() => {
             setEntries(prev => prev.map(e =>
               e.flashedByVoter === voterIdx ? { ...e, flashedByVoter: null, is12: false, coveredPts: null } : e
@@ -329,7 +410,114 @@ export default function Index() {
       }, COUNTUP_MS + SORT_DELAY);
 
     }, FLY_MS);
-  }, [blocked, nextHighPt, voter, curHighGivenTo, ballId, highHistory, voterIdx, entries, savePositions, runFlip]);
+  }, [blocked, nextHighPt, voter, curHighGivenTo, ballId, highHistory, voterIdx, entries, preVotes, savePositions, runFlip]);
+
+  // ── AUTO-голосование ───────────────────────────────────────────────────
+  // Когда включён autoMode и сцена preselect/preconfirm — автоматически генерируем голоса
+  const handleAutoVote = useCallback(() => {
+    if (!voter || !contestants.length) return;
+    const allPts = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12];
+    const { lowVotes, highVotes } = generateRandomVotes(
+      voter.id,
+      contestants.map(c => c.id),
+      allPts,
+    );
+    // Записываем low-голоса и сразу переходим к main
+    setPreVotes(prev => ({ ...prev, [voterIdx]: lowVotes }));
+
+    // Применяем все голоса сразу (влёт в таблицу)
+    setScene("main");
+    setTableVisible(false);
+    setTimeout(() => setTableVisible(true), 80);
+
+    setTimeout(() => {
+      // Применяем low (1-7)
+      const old = savePositions();
+      setEntries(prev => {
+        let upd = [...prev];
+        lowVotes.forEach(vote => {
+          upd = upd.map(e => e.id === vote.countryId
+            ? { ...e, score: e.score + vote.pts, flashedByVoter: voterIdx, coveredPts: vote.pts, recentPts: [...e.recentPts, vote.pts] }
+            : e
+          );
+        });
+        return sortEntries(upd);
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => runFlip(old, 2200)));
+
+      // Применяем high (8,10,12) последовательно с задержкой
+      highVotes.forEach((vote, i) => {
+        setTimeout(() => {
+          const pts = vote.pts;
+          const targetId = vote.countryId;
+          const targetEntry = contestants.find(c => c.id === targetId);
+          const targetCc = targetEntry?.cc ?? "un";
+
+          const flagEl = containerRef.current?.querySelector<HTMLElement>(`[data-flag="${targetId}"]`);
+          const panelEl = panelRef.current;
+          if (!flagEl || !panelEl) return;
+
+          const fr = flagEl.getBoundingClientRect();
+          const pr = panelEl.getBoundingClientRect();
+          const nb: FlyBall = {
+            id: Date.now() + i,
+            pts, targetCc,
+            x1: pr.left + pr.width/2, y1: pr.top + pr.height/2,
+            x2: fr.left + fr.width/2, y2: fr.top + fr.height/2,
+          };
+          setBallId(b => b + 1);
+          setFlyBalls(prev => [...prev, nb]);
+          if (pts === 12) { playDouzeSound(); playSongSnippet(targetId); }
+
+          setTimeout(() => {
+            setFlyBalls(prev => prev.filter(b => b.id !== nb.id));
+            setRowPushId(targetId);
+            setEntries(prev => prev.map(e =>
+              e.id === targetId
+                ? { ...e, score: e.score + pts, flashedByVoter: voterIdx, is12: pts===12, coveredPts: pts, recentPts: [...e.recentPts, pts] }
+                : e
+            ));
+
+            setTimeout(() => {
+              setRowPushId(null);
+              const o2 = savePositions();
+              setEntries(prev => sortEntries(prev));
+              requestAnimationFrame(() => requestAnimationFrame(() => runFlip(o2)));
+
+              if (pts === 12) {
+                const song = SONGS[targetId];
+                setTimeout(() => setDouzeEvent({
+                  receiverCc: targetCc, receiverName: targetEntry?.name ?? targetId,
+                  voterName: voter?.name ?? "", songTitle: song?.song ?? "", artist: song?.artist ?? "", ytId: song?.ytId ?? "",
+                }), 400);
+              }
+
+              const isLastHigh = i === highVotes.length - 1;
+              if (isLastHigh) {
+                // Записываем в лог
+                const allVotes = [
+                  ...lowVotes,
+                  ...highVotes.map(v => ({ countryId: v.countryId, pts: v.pts })),
+                ];
+                setVoteLog(prev => [...prev, { voterId: voter?.id ?? "", votes: allVotes }]);
+                setHighHistory(prev => ({
+                  ...prev,
+                  [voterIdx]: highVotes.map(v => ({ id: v.countryId, pts: v.pts })),
+                }));
+
+                setTimeout(() => {
+                  setEntries(prev => prev.map(e =>
+                    e.flashedByVoter === voterIdx ? { ...e, flashedByVoter: null, is12: false, coveredPts: null } : e
+                  ));
+                  setVoterIdx(v => v + 1);
+                }, NEXT_VOTER_DELAY);
+              }
+            }, COUNTUP_MS + SORT_DELAY);
+          }, FLY_MS);
+        }, i * (FLY_MS + COUNTUP_MS + SORT_DELAY + 500));
+      });
+    }, 700);
+  }, [voter, voterIdx, contestants, preVotes, savePositions, runFlip]);
 
   const half  = Math.ceil(entries.length / 2);
   const left  = entries.slice(0, half);
@@ -411,16 +599,28 @@ export default function Index() {
             })}
           </div>
 
-          <button onClick={() => setScene("setup")} style={{
-            background:"linear-gradient(158deg,#FFD700 0%,#FF9200 100%)",
-            border:"none", borderRadius:"8px", padding:"13px 36px",
-            color:"#000", fontSize:"14px", fontWeight:900,
-            letterSpacing:"0.14em", cursor:"pointer",
-            fontFamily:"'Montserrat',sans-serif",
-            boxShadow:"0 0 28px rgba(255,180,0,0.6)",
-          }}>
-            PLAY AGAIN ↺
-          </button>
+          <div style={{ display:"flex", gap:"12px", justifyContent:"center", flexWrap:"wrap" }}>
+            <button onClick={() => setScene("votelog")} style={{
+              background:"linear-gradient(158deg,#1a5aec 0%,#0a30a8 100%)",
+              border:"1.5px solid rgba(100,180,255,0.6)", borderRadius:"8px", padding:"12px 28px",
+              color:"#fff", fontSize:"13px", fontWeight:700,
+              letterSpacing:"0.12em", cursor:"pointer",
+              fontFamily:"'Montserrat',sans-serif",
+              boxShadow:"0 0 20px rgba(40,120,255,0.5)",
+            }}>
+              📊 VOTING TABLE
+            </button>
+            <button onClick={() => setScene("setup")} style={{
+              background:"linear-gradient(158deg,#FFD700 0%,#FF9200 100%)",
+              border:"none", borderRadius:"8px", padding:"12px 28px",
+              color:"#000", fontSize:"13px", fontWeight:900,
+              letterSpacing:"0.14em", cursor:"pointer",
+              fontFamily:"'Montserrat',sans-serif",
+              boxShadow:"0 0 28px rgba(255,180,0,0.6)",
+            }}>
+              PLAY AGAIN ↺
+            </button>
+          </div>
         </div>
         <EscStyles />
       </div>
@@ -571,6 +771,167 @@ export default function Index() {
     );
   }
 
+  // ── Таблица голосов ────────────────────────────────────────────
+  if (scene === "votelog") {
+    // Строим матрицу: строки = голосующие, столбцы = участники (по итоговому месту)
+    const sortedContestants = [...entries].sort((a, b) => b.score - a.score);
+
+    return (
+      <div style={{ minHeight:"100vh", background:"#0c1e6e", position:"relative", overflow:"hidden",
+        fontFamily:"'Montserrat',sans-serif", color:"#fff" }}>
+        <EscBackground />
+        <div style={{ position:"relative", zIndex:10, padding:"16px 12px 40px", maxWidth:"1200px", margin:"0 auto" }}>
+
+          {/* Header */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+            <div>
+              <div style={{ fontSize:"clamp(16px,4vw,26px)", fontWeight:900, letterSpacing:"0.06em",
+                background:"linear-gradient(180deg,#fffbe0 0%,#FFD700 60%,#FF9200 100%)",
+                WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
+                filter:"drop-shadow(0 0 10px rgba(255,180,0,0.6))" }}>
+                FULL VOTING TABLE
+              </div>
+              <div style={{ fontSize:"11px", letterSpacing:"0.2em", color:"rgba(140,200,255,0.5)", marginTop:"3px" }}>
+                Rows = voters · Columns = contestants (by final rank)
+              </div>
+            </div>
+            <button onClick={() => setScene("winner")} style={{
+              background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.2)",
+              borderRadius:"6px", padding:"8px 18px", color:"#fff", fontSize:"12px",
+              fontWeight:700, cursor:"pointer", fontFamily:"'Montserrat',sans-serif",
+              letterSpacing:"0.08em" }}>
+              ← BACK
+            </button>
+          </div>
+
+          {/* Table */}
+          <div style={{ overflowX:"auto", overflowY:"auto", maxHeight:"78vh" }}>
+            <table style={{ borderCollapse:"collapse", minWidth:"100%", fontSize:"11px" }}>
+              <thead>
+                <tr style={{ position:"sticky", top:0, zIndex:20, background:"rgba(10,20,80,0.98)" }}>
+                  {/* Voter column header */}
+                  <th style={{ padding:"8px 10px", textAlign:"left", whiteSpace:"nowrap",
+                    borderBottom:"2px solid rgba(80,140,255,0.4)",
+                    color:"rgba(140,200,255,0.6)", fontWeight:700, letterSpacing:"0.1em",
+                    position:"sticky", left:0, background:"rgba(10,20,80,0.98)", zIndex:30 }}>
+                    VOTER
+                  </th>
+                  {/* Country columns */}
+                  {sortedContestants.map((c, idx) => (
+                    <th key={c.id} style={{
+                      padding:"4px 6px", textAlign:"center", whiteSpace:"nowrap",
+                      borderBottom:"2px solid rgba(80,140,255,0.4)",
+                      borderLeft:"1px solid rgba(255,255,255,0.04)",
+                      minWidth:"50px",
+                    }}>
+                      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"3px" }}>
+                        <span style={{ fontSize:"9px", color: idx === 0 ? "#FFD700" : "rgba(140,200,255,0.5)",
+                          fontWeight:700 }}>#{idx+1}</span>
+                        <FlagSvg cc={c.cc} width={28} height={18} />
+                        <span style={{ fontSize:"9px", color:"rgba(180,220,255,0.7)", maxWidth:"50px",
+                          overflow:"hidden", textOverflow:"ellipsis", display:"block",
+                          whiteSpace:"nowrap" }}>
+                          {c.name.split(" ")[0]}
+                        </span>
+                        <span style={{ fontSize:"10px", fontWeight:700, color: idx === 0 ? "#FFD700" : "#70c2f0" }}>
+                          {c.score}
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {voteLog.map((record, ri) => {
+                  const voterCountry = voters.find(v => v.id === record.voterId);
+                  return (
+                    <tr key={ri} style={{
+                      background: ri % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                    }}>
+                      {/* Voter name */}
+                      <td style={{
+                        padding:"6px 10px", whiteSpace:"nowrap",
+                        borderBottom:"1px solid rgba(255,255,255,0.04)",
+                        position:"sticky", left:0,
+                        background: ri % 2 === 0 ? "rgba(10,22,85,0.98)" : "rgba(8,18,70,0.98)",
+                        zIndex:10,
+                      }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                          <FlagSvg cc={voterCountry?.cc ?? "un"} width={24} height={16} />
+                          <span style={{ fontSize:"11px", fontWeight:600, color:"rgba(180,220,255,0.85)",
+                            letterSpacing:"0.04em" }}>
+                            {voterCountry?.name ?? record.voterId}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Points for each contestant */}
+                      {sortedContestants.map(c => {
+                        const vote = record.votes.find(v => v.countryId === c.id);
+                        const pts  = vote?.pts ?? null;
+                        const isHigh = pts !== null && pts >= 8;
+                        return (
+                          <td key={c.id} style={{
+                            padding:"5px 6px", textAlign:"center",
+                            borderBottom:"1px solid rgba(255,255,255,0.04)",
+                            borderLeft:"1px solid rgba(255,255,255,0.04)",
+                          }}>
+                            {pts !== null ? (
+                              <span style={{
+                                display:"inline-block",
+                                minWidth:"24px", padding:"2px 5px",
+                                borderRadius:"4px",
+                                fontWeight: isHigh ? 900 : 600,
+                                fontSize: isHigh ? "13px" : "11px",
+                                background: pts === 12
+                                  ? "linear-gradient(135deg,rgba(255,180,0,0.3),rgba(255,100,0,0.2))"
+                                  : pts === 10
+                                    ? "rgba(255,180,0,0.18)"
+                                    : pts === 8
+                                      ? "rgba(60,120,255,0.22)"
+                                      : "rgba(255,255,255,0.06)",
+                                color: pts === 12 ? "#FFD700"
+                                  : pts === 10 ? "#FFC200"
+                                  : pts === 8 ? "#88ccff"
+                                  : "rgba(180,220,255,0.75)",
+                                border: isHigh
+                                  ? pts === 12
+                                    ? "1px solid rgba(255,180,0,0.4)"
+                                    : pts === 10
+                                      ? "1px solid rgba(255,180,0,0.25)"
+                                      : "1px solid rgba(60,120,255,0.35)"
+                                  : "1px solid transparent",
+                              }}>
+                                {pts}
+                              </span>
+                            ) : (
+                              <span style={{ color:"rgba(255,255,255,0.1)", fontSize:"10px" }}>—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Legend */}
+          <div style={{ marginTop:"12px", display:"flex", gap:"16px", flexWrap:"wrap",
+            fontSize:"10px", color:"rgba(140,200,255,0.5)", letterSpacing:"0.08em" }}>
+            <span style={{ color:"#FFD700" }}>■ 12 pts</span>
+            <span style={{ color:"#FFC200" }}>■ 10 pts</span>
+            <span style={{ color:"#88ccff" }}>■ 8 pts</span>
+            <span style={{ color:"rgba(180,220,255,0.5)" }}>■ 1–7 pts</span>
+            <span style={{ color:"rgba(255,255,255,0.15)" }}>— no points</span>
+          </div>
+        </div>
+        <EscStyles />
+      </div>
+    );
+  }
+
   // ── Основная таблица / карта / выбор ───────────────────────────
   return (
     <div style={{ minHeight:"100vh", fontFamily:"'Montserrat',sans-serif", color:"#fff",
@@ -584,8 +945,23 @@ export default function Index() {
       )}
 
       {scene === "preselect" && voter && (
-        <PreSelectionScreen voterCc={voter.cc} voterName={voter.name}
-          voterCountryId={voter.id} contestants={contestants} onConfirm={handlePreConfirm} />
+        <>
+          <PreSelectionScreen voterCc={voter.cc} voterName={voter.name}
+            voterCountryId={voter.id} contestants={contestants} onConfirm={handlePreConfirm} />
+          {/* Кнопка авто-голосования — фиксированная внизу */}
+          <div style={{ position:"fixed", bottom:"20px", right:"20px", zIndex:900 }}>
+            <button onClick={handleAutoVote} style={{
+              background:"linear-gradient(158deg,#00aa55 0%,#007733 100%)",
+              border:"2px solid rgba(0,220,110,0.6)", borderRadius:"10px",
+              padding:"12px 22px", color:"#fff", fontSize:"13px", fontWeight:900,
+              letterSpacing:"0.1em", cursor:"pointer",
+              fontFamily:"'Montserrat',sans-serif",
+              boxShadow:"0 0 24px rgba(0,180,80,0.6), 0 4px 16px rgba(0,0,0,0.5)",
+            }}>
+              🎲 AUTO VOTE
+            </button>
+          </div>
+        </>
       )}
 
       {/* Основная таблица */}
@@ -620,6 +996,17 @@ export default function Index() {
               fontSize:"10px", fontWeight:700, letterSpacing:"0.1em",
               cursor:"pointer", fontFamily:"'Montserrat',sans-serif", transition:"all 0.2s" }}>
               ↩ UNDO
+            </button>
+          )}
+          {/* Кнопка AUTO для следующего голосующего (показывается на intro/preselect) */}
+          {!blocked && nextHighPt && curHighCount === 0 && (
+            <button onClick={handleAutoVote} style={{
+              background:"linear-gradient(158deg,rgba(0,140,80,0.8) 0%,rgba(0,100,50,0.9) 100%)",
+              border:"1px solid rgba(0,200,100,0.5)", borderRadius:"6px",
+              padding:"5px 12px", color:"#afffcc",
+              fontSize:"10px", fontWeight:700, letterSpacing:"0.1em",
+              cursor:"pointer", fontFamily:"'Montserrat',sans-serif", transition:"all 0.2s" }}>
+              🎲 AUTO
             </button>
           )}
         </div>
