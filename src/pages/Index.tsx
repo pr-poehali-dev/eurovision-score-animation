@@ -199,7 +199,10 @@ export default function Index() {
       const n = el.getBoundingClientRect();
       const dx = o.left - n.left, dy = o.top - n.top;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-      el.style.position = "relative"; el.style.zIndex = "200";
+      // Строки с высокими баллами (coveredPts >= 8) летят поверх всей таблицы
+      const coveredPts = parseInt(el.getAttribute("data-covered") ?? "0", 10);
+      const flyZ = coveredPts >= 8 ? "500" : "200";
+      el.style.position = "relative"; el.style.zIndex = flyZ;
       el.style.transform = `translate(${dx}px,${dy}px)`;
       el.style.transition = "none";
       requestAnimationFrame(() => requestAnimationFrame(() => {

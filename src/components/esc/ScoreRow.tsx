@@ -43,37 +43,60 @@ export function ScoreRow({
   const displayScore = useCountUp(entry.score, 1200);
   const isFlash      = entry.flashedByVoter !== null;
   const is12         = entry.is12;
+  const isHighPts    = (entry.coveredPts ?? 0) >= 8; // получила 8/10/12 — всегда поверх
   const unclickable  = isVoter || alreadyVoted || !hasNext;
 
   // Цвет заливки слева направо при isPushed
   const pushBg = is12
-    ? "rgba(220,120,0,0.75)"
-    : "rgba(0,120,255,0.65)";
+    ? "rgba(230,100,0,0.88)"
+    : (entry.coveredPts ?? 0) === 10
+      ? "rgba(220,130,0,0.82)"
+      : "rgba(0,100,255,0.78)";
 
   return (
     <div
       data-id={entry.id}
+      data-covered={entry.coveredPts ?? 0}
       onClick={() => !unclickable && onClick(entry.id)}
       style={{
         display: "flex", alignItems: "center",
         height: "46px", padding: "0 10px 0 8px",
         background: is12
-          ? "linear-gradient(90deg,rgba(200,90,0,0.6) 0%,rgba(160,55,0,0.42) 50%,rgba(60,18,0,0.15) 100%)"
-          : isFlash
-            ? "linear-gradient(90deg,rgba(15,105,255,0.52) 0%,rgba(6,52,180,0.36) 52%,rgba(2,18,75,0.14) 100%)"
-            : "transparent",
+          ? "linear-gradient(90deg,rgba(220,90,0,0.72) 0%,rgba(180,55,0,0.55) 50%,rgba(80,18,0,0.22) 100%)"
+          : isFlash && isHighPts
+            ? "linear-gradient(90deg,rgba(0,120,255,0.65) 0%,rgba(0,70,200,0.48) 52%,rgba(0,20,90,0.2) 100%)"
+            : isFlash
+              ? "linear-gradient(90deg,rgba(15,105,255,0.52) 0%,rgba(6,52,180,0.36) 52%,rgba(2,18,75,0.14) 100%)"
+              : "transparent",
         borderBottom: "1px solid rgba(255,255,255,0.055)",
         cursor:     unclickable ? "default" : "pointer",
         opacity:    isVoter ? 0.42 : 1,
-        transition: "background 0.4s ease, opacity 0.3s, transform 0.3s ease, box-shadow 0.3s ease",
+        transition: "background 0.4s ease, opacity 0.3s, transform 0.45s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.45s ease",
         position:   "relative",
         userSelect: "none",
         boxSizing:  "border-box",
-        // Выдвижение вперёд при isPushed
-        transform:  isPushed ? "scale(1.03) translateX(5px)" : "scale(1) translateX(0)",
-        zIndex:     isPushed ? 50 : "auto",
-        boxShadow:  isPushed ? "6px 0 24px rgba(0,100,255,0.45), 0 2px 12px rgba(0,0,0,0.5)" : "none",
-        overflow:   "hidden",
+        // isPushed — сильное выдвижение при получении балла
+        // isHighPts (без push) — умеренное постоянное выдвижение пока держится балл
+        transform: isPushed
+          ? "scale(1.07) translateX(16px)"
+          : isHighPts
+            ? "scale(1.025) translateX(6px)"
+            : "scale(1) translateX(0)",
+        zIndex: isPushed
+          ? 500                   // поверх ВСЕГО при выдвижении
+          : isHighPts
+            ? 100                 // поверх таблицы пока держится высокий балл
+            : "auto" as unknown as number,
+        boxShadow: isPushed
+          ? is12
+            ? "10px 0 40px rgba(255,140,0,0.8), 0 4px 30px rgba(200,60,0,0.6), -4px 0 20px rgba(255,80,0,0.4)"
+            : "10px 0 40px rgba(0,140,255,0.75), 0 4px 30px rgba(0,80,220,0.55), -4px 0 20px rgba(0,100,255,0.35)"
+          : isHighPts
+            ? is12
+              ? "6px 0 22px rgba(255,120,0,0.55), 0 2px 12px rgba(0,0,0,0.5)"
+              : "6px 0 20px rgba(0,100,255,0.5), 0 2px 10px rgba(0,0,0,0.4)"
+            : "none",
+        overflow: "hidden",
       }}
     >
       {/* Заливка слева направо при isPushed */}
@@ -81,7 +104,7 @@ export function ScoreRow({
         <div style={{
           position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
           background: pushBg,
-          animation: "fillLR 0.7s cubic-bezier(0.25,0.46,0.45,0.94) forwards",
+          animation: "fillLR 0.65s cubic-bezier(0.25,0.46,0.45,0.94) forwards",
         }} />
       )}
       {/* FLAG + cover */}
