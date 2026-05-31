@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Entry, FlyBall } from "./types";
 import FlagSvg from "./flags";
 
@@ -30,7 +30,7 @@ export function useCountUp(target: number, duration = 1200): number {
 
 // ── Строка таблицы ──
 export function ScoreRow({
-  entry, isVoter, alreadyVoted, hasNext, onClick, isLeader, isPushed,
+  entry, isVoter, alreadyVoted, hasNext, onClick, isLeader, isPushed, isLeftCol, gridRow,
 }: {
   entry:        Entry;
   isVoter:      boolean;
@@ -39,11 +39,13 @@ export function ScoreRow({
   onClick:      (id: string) => void;
   isLeader:     boolean;
   isPushed?:    boolean;
+  isLeftCol?:   boolean;
+  gridRow?:     number;
 }) {
   const displayScore = useCountUp(entry.score, 1200);
   const isFlash      = entry.flashedByVoter !== null;
   const is12         = entry.is12;
-  const isHighPts    = (entry.coveredPts ?? 0) >= 8; // получила 8/10/12 — всегда поверх
+  const isHighPts    = (entry.coveredPts ?? 0) >= 8;
   const unclickable  = isVoter || alreadyVoted || !hasNext;
 
   // Цвет заливки слева направо при isPushed
@@ -52,6 +54,9 @@ export function ScoreRow({
     : (entry.coveredPts ?? 0) === 10
       ? "rgba(220,130,0,0.82)"
       : "rgba(0,100,255,0.78)";
+
+  // grid placement
+  const gridColumn = isLeftCol ? 1 : 2;
 
   return (
     <div
@@ -69,10 +74,13 @@ export function ScoreRow({
               ? "linear-gradient(90deg,rgba(15,105,255,0.52) 0%,rgba(6,52,180,0.36) 52%,rgba(2,18,75,0.14) 100%)"
               : "transparent",
         borderBottom: "1px solid rgba(255,255,255,0.055)",
+        borderRight: isLeftCol ? "1px solid rgba(30,80,200,0.3)" : "none",
         cursor:     unclickable ? "default" : "pointer",
         opacity:    isVoter ? 0.42 : 1,
         transition: "background 0.4s ease, opacity 0.3s, transform 0.45s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.45s ease",
         position:   "relative",
+        gridColumn,
+        gridRow: gridRow ?? "auto",
         userSelect: "none",
         boxSizing:  "border-box",
         // isPushed — сильное выдвижение при получении балла

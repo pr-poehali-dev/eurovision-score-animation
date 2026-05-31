@@ -1011,17 +1011,27 @@ export default function Index() {
           )}
         </div>
 
-        {/* Scoreboard */}
+        {/* Scoreboard — НЕТ position:relative чтобы не создавать stacking context,
+            тогда z-index строк работает в контексте всей страницы */}
         <div style={{
           background:"linear-gradient(180deg,rgba(0,4,24,0.97) 0%,rgba(0,6,32,0.95) 100%)",
           borderRadius:"6px 6px 0 0",
           border:"1px solid rgba(30,80,200,0.5)", borderBottom:"none",
-          overflow:"visible", position:"relative",
+          overflow:"visible",
           boxShadow:"0 8px 55px rgba(0,0,0,0.8),inset 0 1px 0 rgba(80,160,255,0.15)",
         }}>
-          <div ref={containerRef} style={{ display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-            <div style={{ borderRight:"1px solid rgba(30,80,200,0.3)" }}>
-              {left.map(e => (
+          {/* Все строки — прямые дети одного грида.
+              Тогда z-index работает между всеми строками обоих "столбцов" */}
+          <div ref={containerRef} style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            overflow: "visible",
+          }}>
+            {entries.map((e, idx) => {
+              const isLeft = idx < half;
+              // gridRow: левые строки занимают ряды 1..half, правые тоже 1..half
+              const gridRow = isLeft ? idx + 1 : idx - half + 1;
+              return (
                 <ScoreRow key={e.id} entry={e}
                   isVoter={!!voter && e.id===voter.id}
                   alreadyVoted={curHighGivenTo.has(e.id)}
@@ -1029,21 +1039,11 @@ export default function Index() {
                   onClick={handleMainClick}
                   isLeader={leaderIds.has(e.id)}
                   isPushed={rowPushId === e.id}
+                  isLeftCol={isLeft}
+                  gridRow={gridRow}
                 />
-              ))}
-            </div>
-            <div>
-              {right.map(e => (
-                <ScoreRow key={e.id} entry={e}
-                  isVoter={!!voter && e.id===voter.id}
-                  alreadyVoted={curHighGivenTo.has(e.id)}
-                  hasNext={!!nextHighPt}
-                  onClick={handleMainClick}
-                  isLeader={leaderIds.has(e.id)}
-                  isPushed={rowPushId === e.id}
-                />
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
 
