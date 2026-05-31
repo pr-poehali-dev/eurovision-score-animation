@@ -274,16 +274,8 @@ export default function Index() {
       });
 
       // Запускаем медленный FLIP для всех строк сразу
+      // Подсветка НЕ сбрасывается здесь — держится до конца раунда (сбрасывается вместе с HIGH-баллами)
       requestAnimationFrame(() => requestAnimationFrame(() => runFlipSlow(old)));
-
-      // Сбросить подсветку через 3s
-      setTimeout(() => {
-        setEntries(prev => prev.map(e =>
-          e.flashedByVoter === voterIdx
-            ? { ...e, flashedByVoter: null }
-            : e
-        ));
-      }, 3000);
     }, APPLY_DELAY);
   }, [preVotes, voterIdx, savePositions, runFlipSlow]);
 
