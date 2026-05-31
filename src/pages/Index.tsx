@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback, useLayoutEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
-// Порядок присвоения баллов: от 12 вниз до 1 (пропуская 9 и 11)
-const POINTS_ORDER = [12, 10, 8, 7, 6, 5, 4, 3, 2, 1];
+// Баллы от меньшего к большему — как в оригинале ESC
+const POINTS_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12];
 
-const flag = (cc: string) => `https://flagcdn.com/w40/${cc}.png`;
+const flag = (cc: string) => `https://flagcdn.com/w80/${cc}.png`;
 
 const CONTESTANTS = [
   { id: "AT", name: "AUSTRIA",         cc: "at" },
@@ -79,10 +79,9 @@ type Entry = {
   name: string;
   cc: string;
   score: number;
-  rank: number;
-  // which voter index last awarded points (flash until voter changes)
   flashedByVoter: number | null;
-  lastPts: number | null;
+  is12: boolean;
+  coveredPts: number | null; // балл, закрывающий флаг
 };
 
 type FlyBall = {
@@ -92,45 +91,218 @@ type FlyBall = {
   x2: number; y2: number;
 };
 
+// Хук анимированного счётчика
+function useCountUp(target: number, duration = 700): number {
+  const [display, setDisplay] = useState(target);
+  const prev = useRef(target);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const from = prev.current;
+    if (from === target) { setDisplay(target); return; }
+    prev.current = target;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(from + (target - from) * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+      else setDisplay(target);
+    };
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [target, duration]);
+
+  return display;
+}
+
+// Строка счёта
+function ScoreRow({
+  entry, isVoter, alreadyVoted, hasNext, onClick, isLeader,
+}: {
+  entry: Entry;
+  isVoter: boolean;
+  alreadyVoted: boolean;
+  hasNext: boolean;
+  onClick: (id: string) => void;
+  isLeader: boolean;
+}) {
+  const displayScore = useCountUp(entry.score, 750);
+  const isFlash = entry.flashedByVoter !== null;
+  const is12 = entry.is12;
+  const unclickable = isVoter || alreadyVoted || !hasNext;
+
+  return (
+    <div
+      data-id={entry.id}
+      onClick={() => !unclickable && onClick(entry.id)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "46px",
+        padding: "0 10px 0 8px",
+        // 12 баллов = оранжево-золотой, обычный flash = синий
+        background: is12
+          ? "linear-gradient(90deg, rgba(200,90,0,0.6) 0%, rgba(160,55,0,0.42) 50%, rgba(60,18,0,0.15) 100%)"
+          : isFlash
+            ? "linear-gradient(90deg, rgba(15,105,255,0.52) 0%, rgba(6,52,180,0.36) 52%, rgba(2,18,75,0.14) 100%)"
+            : "transparent",
+        borderBottom: "1px solid rgba(255,255,255,0.055)",
+        cursor: unclickable ? "default" : "pointer",
+        opacity: isVoter ? 0.42 : 1,
+        transition: "background 0.4s ease, opacity 0.3s",
+        position: "relative",
+        userSelect: "none",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* FLAG CELL */}
+      <div
+        data-flag={entry.id}
+        style={{
+          width: "58px", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          position: "relative", height: "100%",
+        }}
+      >
+        <img
+          src={flag(entry.cc)}
+          alt={entry.name}
+          style={{
+            width: "44px", height: "29px",
+            objectFit: "cover",
+            borderRadius: "2px",
+            boxShadow: "0 1px 6px rgba(0,0,0,0.65)",
+            display: "block",
+            animation: isLeader ? "flagWave 2.2s ease-in-out infinite" : "none",
+            transformOrigin: "left center",
+          }}
+        />
+        {/* Шар закрывает флаг до конца голосования */}
+        {entry.coveredPts !== null && (
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 5,
+          }}>
+            <div style={{
+              width: "40px", height: "40px", borderRadius: "50%",
+              background: entry.coveredPts === 12
+                ? "radial-gradient(circle at 35% 28%, #fff5a0 0%, #FFD700 30%, #FF8500 72%, #cc4000 100%)"
+                : entry.coveredPts === 10
+                  ? "radial-gradient(circle at 35% 28%, #ffff90 0%, #FFC800 36%, #FF9500 100%)"
+                  : "radial-gradient(circle at 35% 28%, #c8eeff 0%, #35a8ff 36%, #0040cc 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Montserrat', sans-serif",
+              fontWeight: 900,
+              fontSize: entry.coveredPts >= 10 ? "17px" : "14px",
+              color: "#fff",
+              boxShadow: entry.coveredPts === 12
+                ? "0 0 16px rgba(255,160,0,0.95), 0 0 28px rgba(255,80,0,0.5)"
+                : "0 0 12px rgba(30,140,255,0.85)",
+              textShadow: "0 1px 3px rgba(0,0,0,0.75)",
+            }}>
+              {entry.coveredPts}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* NAME */}
+      <div style={{
+        flex: 1,
+        fontSize: "15px",
+        fontWeight: 500,
+        letterSpacing: "0.07em",
+        color: isFlash ? "#ffffff" : "rgba(180,218,255,0.92)",
+        fontFamily: "'Montserrat', sans-serif",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        transition: "color 0.25s",
+      }}>
+        {entry.name}
+      </div>
+
+      {/* SCORE */}
+      <div style={{
+        width: "56px",
+        textAlign: "right",
+        flexShrink: 0,
+        fontSize: isFlash ? "22px" : "18px",
+        fontWeight: 700,
+        color: is12 ? "#FFD700" : isFlash ? "#7df8ff" : "#70c2f0",
+        fontFamily: "'Montserrat', sans-serif",
+        transition: "font-size 0.22s, color 0.22s",
+      }}>
+        {displayScore > 0 ? displayScore : ""}
+      </div>
+    </div>
+  );
+}
+
 export default function Index() {
   const [entries, setEntries] = useState<Entry[]>(
-    CONTESTANTS.map((c, i) => ({
-      ...c, score: 0, rank: i + 1,
-      flashedByVoter: null, lastPts: null,
+    CONTESTANTS.map(c => ({
+      ...c, score: 0,
+      flashedByVoter: null, is12: false, coveredPts: null,
     }))
   );
-  // voterIdx indexes into VOTING_COUNTRIES
+
   const [voterIdx, setVoterIdx] = useState(0);
-  // givenTo[voterIdx] = Set of contestant IDs already voted for
-  const [givenTo, setGivenTo] = useState<Record<number, Set<string>>>({});
-  // awardedPts[voterIdx] = number of points awarded so far (index into POINTS_ORDER)
+  const [givenTo, setGivenTo]   = useState<Record<number, Set<string>>>({});
   const [awardedCount, setAwardedCount] = useState<Record<number, number>>({});
-
   const [flyBalls, setFlyBalls] = useState<FlyBall[]>([]);
-  const [ballId, setBallId] = useState(0);
-  const [douze, setDouze] = useState(false);
-  const [blocked, setBlocked] = useState(false); // prevent double-click during animation
+  const [ballId, setBallId]     = useState(0);
+  const [douze, setDouze]       = useState(false);
+  const [blocked, setBlocked]   = useState(false);
 
-  // For FLIP animation
-  const prevPositions = useRef<Record<string, DOMRect>>({});
-  const rowEls = useRef<Record<string, HTMLDivElement | null>>({});
-  const flagEls = useRef<Record<string, HTMLDivElement | null>>({});
-  const audioRef = useRef<AudioContext | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef     = useRef<HTMLDivElement>(null);
+  const audioRef     = useRef<AudioContext | null>(null);
 
-  const voter = VOTING_COUNTRIES[voterIdx % VOTING_COUNTRIES.length];
-  const count = awardedCount[voterIdx] ?? 0;
-  const nextPt = count < POINTS_ORDER.length ? POINTS_ORDER[count] : null;
+  const voter        = VOTING_COUNTRIES[voterIdx % VOTING_COUNTRIES.length];
+  const count        = awardedCount[voterIdx] ?? 0;
+  const nextPt       = count < POINTS_ORDER.length ? POINTS_ORDER[count] : null;
   const voterGivenTo = givenTo[voterIdx] ?? new Set<string>();
 
-  // ── Sound ──
+  // Лидеры
+  const maxScore  = Math.max(0, ...entries.map(e => e.score));
+  const leaderIds = maxScore > 0
+    ? new Set(entries.filter(e => e.score === maxScore).map(e => e.id))
+    : new Set<string>();
+
+  // ── FLIP ──
+  const savePositions = useCallback((): Record<string, number> => {
+    const pos: Record<string, number> = {};
+    containerRef.current?.querySelectorAll<HTMLElement>("[data-id]").forEach(el => {
+      pos[el.getAttribute("data-id")!] = el.getBoundingClientRect().top;
+    });
+    return pos;
+  }, []);
+
+  const runFlip = useCallback((old: Record<string, number>) => {
+    containerRef.current?.querySelectorAll<HTMLElement>("[data-id]").forEach(el => {
+      const id  = el.getAttribute("data-id")!;
+      const dy  = (old[id] ?? 0) - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 0.5) return;
+      el.style.transform  = `translateY(${dy}px)`;
+      el.style.transition = "none";
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.transform  = "translateY(0)";
+        el.style.transition = "transform 1s cubic-bezier(0.22,0.61,0.36,1)";
+      }));
+    });
+  }, []);
+
+  // ── SOUND ──
   const playSound = useCallback((pts: number) => {
     try {
       if (!audioRef.current) audioRef.current = new AudioContext();
       const ctx = audioRef.current;
-      const play = (f: number, t: number, d: number, v = 0.3) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
+      const tone = (f: number, t: number, d: number, v = 0.3) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
         o.connect(g); g.connect(ctx.destination);
         o.frequency.value = f; o.type = "sine";
         g.gain.setValueAtTime(v, ctx.currentTime + t);
@@ -139,78 +311,50 @@ export default function Index() {
         o.stop(ctx.currentTime + t + d + 0.05);
       };
       if (pts === 12) {
-        play(523, 0, 0.1, 0.4); play(659, 0.1, 0.1, 0.45);
-        play(784, 0.22, 0.12, 0.5); play(1047, 0.36, 0.5, 0.55);
-        play(1319, 0.55, 0.65, 0.5);
+        tone(523,0,0.1,0.4); tone(659,0.1,0.1,0.45);
+        tone(784,0.22,0.12,0.5); tone(1047,0.36,0.5,0.55);
+        tone(1319,0.55,0.65,0.5);
       } else if (pts === 10) {
-        play(523, 0, 0.1, 0.35); play(659, 0.12, 0.12, 0.4);
-        play(784, 0.26, 0.4, 0.42);
+        tone(523,0,0.1,0.35); tone(659,0.12,0.12,0.4); tone(784,0.26,0.4,0.42);
       } else if (pts >= 7) {
-        play(440, 0, 0.08, 0.3); play(659, 0.1, 0.3, 0.35);
+        tone(440,0,0.08,0.3); tone(659,0.1,0.3,0.35);
       } else {
-        play(440, 0, 0.06, 0.25); play(523, 0.07, 0.2, 0.28);
+        tone(440,0,0.06,0.25); tone(523,0.07,0.2,0.28);
       }
-    } catch (_e) { /* no audio */ }
+    } catch (_e) { /* no audio ctx */ }
   }, []);
 
-  // ── FLIP: save positions before re-render, animate after ──
-  const savePositions = useCallback(() => {
-    prevPositions.current = {};
-    Object.entries(rowEls.current).forEach(([id, el]) => {
-      if (el) prevPositions.current[id] = el.getBoundingClientRect();
-    });
-  }, []);
-
-  const animateFlip = useCallback(() => {
-    Object.entries(rowEls.current).forEach(([id, el]) => {
-      if (!el) return;
-      const prev = prevPositions.current[id];
-      if (!prev) return;
-      const curr = el.getBoundingClientRect();
-      const dy = prev.top - curr.top;
-      if (Math.abs(dy) < 1) return;
-      el.style.transform = `translateY(${dy}px)`;
-      el.style.transition = "none";
-      requestAnimationFrame(() => {
-        el.style.transform = "translateY(0)";
-        el.style.transition = "transform 0.55s cubic-bezier(0.22,0.61,0.36,1)";
-      });
-    });
-  }, []);
-
-  // ── Click handler ──
+  // ── CLICK ──
   const handleClick = useCallback((targetId: string) => {
-    if (blocked) return;
-    if (!nextPt) return;
-    // Can't vote for self
+    if (blocked || !nextPt) return;
     if (targetId === voter.id) return;
-    // Can't vote twice for same country this round
     if (voterGivenTo.has(targetId)) return;
 
-    const flagEl = flagEls.current[targetId];
+    // Координаты флага цели
+    const flagEl = containerRef.current?.querySelector<HTMLElement>(`[data-flag="${targetId}"]`);
     if (!flagEl) return;
+    const fr = flagEl.getBoundingClientRect();
+    const pr = panelRef.current?.getBoundingClientRect();
+    const sx = pr ? pr.left + pr.width / 2 : window.innerWidth / 2;
+    const sy = pr ? pr.top  + pr.height / 2 : window.innerHeight - 80;
 
-    const fRect = flagEl.getBoundingClientRect();
-    const panelRect = panelRef.current?.getBoundingClientRect();
-    const startX = (panelRect ? panelRect.left + panelRect.width / 2 : window.innerWidth / 2);
-    const startY = (panelRect ? panelRect.top + panelRect.height / 2 : window.innerHeight - 80);
-
-    const newBall: FlyBall = {
-      id: ballId, pts: nextPt,
-      x1: startX, y1: startY,
-      x2: fRect.left + fRect.width / 2,
-      y2: fRect.top + fRect.height / 2,
+    const pts = nextPt;
+    const nb: FlyBall = {
+      id: ballId, pts,
+      x1: sx, y1: sy,
+      x2: fr.left + fr.width  / 2,
+      y2: fr.top  + fr.height / 2,
     };
 
     setBlocked(true);
     setBallId(b => b + 1);
-    setFlyBalls(prev => [...prev, newBall]);
-    if (nextPt === 12) setDouze(true);
-    playSound(nextPt);
+    setFlyBalls(prev => [...prev, nb]);
+    if (pts === 12) setDouze(true);
+    playSound(pts);
 
-    // Update state immediately (before ball lands — optimistic)
-    const pts = nextPt;
     const newCount = count + 1;
+    const isLast   = newCount >= POINTS_ORDER.length;
+
     setAwardedCount(prev => ({ ...prev, [voterIdx]: newCount }));
     setGivenTo(prev => {
       const s = new Set(prev[voterIdx] ?? new Set<string>());
@@ -218,157 +362,50 @@ export default function Index() {
       return { ...prev, [voterIdx]: s };
     });
 
-    // Ball lands → update scores + FLIP animation
+    // Шар долетает → флаг закрыт + обновить счёт + FLIP
     setTimeout(() => {
-      setFlyBalls(prev => prev.filter(b => b.id !== newBall.id));
+      setFlyBalls(prev => prev.filter(b => b.id !== nb.id));
 
-      savePositions();
+      const old = savePositions();
 
       setEntries(prev => {
         const updated = prev.map(e =>
           e.id === targetId
-            ? { ...e, score: e.score + pts, flashedByVoter: voterIdx, lastPts: pts }
+            ? { ...e, score: e.score + pts, flashedByVoter: voterIdx, is12: pts === 12, coveredPts: pts }
             : e
         );
-        const sorted = [...updated].sort((a, b) =>
-          b.score - a.score || a.name.localeCompare(b.name)
-        );
-        return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
+        // Сортировка по убыванию счёта
+        return [...updated].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
       });
 
-      // FLIP after DOM update
-      requestAnimationFrame(() => {
-        requestAnimationFrame(animateFlip);
-      });
+      requestAnimationFrame(() => requestAnimationFrame(() => runFlip(old)));
 
-      if (pts === 12) setTimeout(() => setDouze(false), 2000);
+      if (pts === 12) setTimeout(() => setDouze(false), 2500);
 
-      // All 10 points awarded → advance to next voter
-      if (newCount >= POINTS_ORDER.length) {
+      // Последний балл → через паузу сбросить подсветку и перейти к следующему
+      if (isLast) {
         setTimeout(() => {
-          // Clear flash for all entries that were flashed by this voter
           setEntries(prev => prev.map(e =>
-            e.flashedByVoter === voterIdx ? { ...e, flashedByVoter: null, lastPts: null } : e
+            e.flashedByVoter === voterIdx
+              ? { ...e, flashedByVoter: null, is12: false, coveredPts: null }
+              : e
           ));
           setVoterIdx(v => v + 1);
-        }, 1800);
+        }, 2200);
       }
 
       setBlocked(false);
-    }, 700);
-  }, [blocked, nextPt, voter.id, voterGivenTo, ballId, count, voterIdx, playSound, savePositions, animateFlip]);
+    }, 680);
+  }, [blocked, nextPt, voter.id, voterGivenTo, ballId, count, voterIdx, playSound, savePositions, runFlip]);
 
-  // When voter changes → clear flash for previous voter immediately
-  useLayoutEffect(() => {
-    // nothing extra needed — flash cleared in timeout above
-  }, [voterIdx]);
-
-  const left  = entries.slice(0, Math.ceil(entries.length / 2));
-  const right = entries.slice(Math.ceil(entries.length / 2));
-
-  const RankBadge = ({ rank }: { rank: number }) =>
-    rank <= 7 ? (
-      <div style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: "30px", height: "26px",
-        background: "linear-gradient(180deg, #1e5299 0%, #0d2d63 100%)",
-        border: "1px solid rgba(90,160,255,0.6)",
-        borderRadius: "4px",
-        fontSize: "14px", fontWeight: 700,
-        color: "#8fd4ff",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 4px rgba(0,0,0,0.5)",
-        flexShrink: 0,
-      }}>{rank}</div>
-    ) : <div style={{ width: "30px", flexShrink: 0 }} />;
-
-  // A row in one column
-  const ScoreRow = ({ entry }: { entry: Entry }) => {
-    const isFlash = entry.flashedByVoter !== null;
-    const isVoter = entry.id === voter.id;
-    const alreadyVoted = voterGivenTo.has(entry.id);
-    const unclickable = isVoter || alreadyVoted || !nextPt;
-
-    return (
-      <div
-        ref={el => { rowEls.current[entry.id] = el; }}
-        onClick={() => !unclickable && handleClick(entry.id)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 0,
-          padding: "0 8px",
-          height: "46px",
-          background: isFlash
-            ? "linear-gradient(90deg, rgba(20,110,255,0.55) 0%, rgba(8,55,180,0.38) 55%, rgba(3,20,80,0.18) 100%)"
-            : "transparent",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          cursor: unclickable ? "default" : "pointer",
-          opacity: isVoter ? 0.55 : 1,
-          transition: "background 0.3s ease, opacity 0.3s",
-          position: "relative",
-          userSelect: "none",
-        }}
-      >
-        {/* Rank badge */}
-        <div style={{ width: "36px", flexShrink: 0 }}>
-          <RankBadge rank={entry.rank} />
-        </div>
-
-        {/* Flag — target for ball */}
-        <div
-          ref={el => { flagEls.current[entry.id] = el; }}
-          style={{ width: "50px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}
-        >
-          <img
-            src={flag(entry.cc)}
-            alt={entry.name}
-            style={{
-              width: "40px", height: "27px",
-              objectFit: "cover",
-              borderRadius: "2px",
-              display: "block",
-              boxShadow: "0 1px 5px rgba(0,0,0,0.55)",
-            }}
-          />
-        </div>
-
-        {/* Country name */}
-        <div style={{
-          flex: 1,
-          fontSize: "15px",
-          fontWeight: 500,
-          letterSpacing: "0.07em",
-          color: isFlash ? "#ffffff" : "rgba(185,220,255,0.92)",
-          fontFamily: "'Montserrat', sans-serif",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          transition: "color 0.25s",
-        }}>
-          {entry.name}
-        </div>
-
-        {/* Score */}
-        <div style={{
-          width: "52px",
-          textAlign: "right",
-          flexShrink: 0,
-          fontSize: isFlash ? "20px" : "17px",
-          fontWeight: 700,
-          color: isFlash ? "#FFD700" : "#72c4f0",
-          fontFamily: "'Montserrat', sans-serif",
-          transition: "font-size 0.2s, color 0.2s",
-        }}>
-          {entry.score}
-        </div>
-      </div>
-    );
-  };
+  // Делим на два столбца
+  const half  = Math.ceil(entries.length / 2);
+  const left  = entries.slice(0, half);
+  const right = entries.slice(half);
 
   return (
     <div style={{
       minHeight: "100vh",
-      background: "linear-gradient(180deg, #04091a 0%, #06102a 35%, #07152e 65%, #04091a 100%)",
       fontFamily: "'Montserrat', sans-serif",
       color: "#fff",
       position: "relative",
@@ -376,258 +413,337 @@ export default function Index() {
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
+      background: "#030817",
     }}>
 
-      {/* BG glow */}
-      <div style={{
-        position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
-        background: `
-          radial-gradient(ellipse 160% 55% at 50% 115%, rgba(0,35,130,0.6) 0%, transparent 55%),
-          radial-gradient(ellipse 70% 35% at 15% 75%, rgba(80,0,150,0.2) 0%, transparent 50%)
-        `,
-      }} />
+      {/* ══════ ANIMATED BACKGROUND ══════ */}
+      <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", overflow: "hidden" }}>
+        {/* Base dark */}
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#030818 0%,#050d24 40%,#060f2a 70%,#030814 100%)" }} />
 
-      {/* Bottom waves */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: "200px", zIndex: 0, pointerEvents: "none" }}>
-        <svg viewBox="0 0 1440 200" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
-          <defs>
-            <linearGradient id="wg1" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#40009a" stopOpacity="0.75"/>
-              <stop offset="50%" stopColor="#6000bb" stopOpacity="0.65"/>
-              <stop offset="100%" stopColor="#40009a" stopOpacity="0.75"/>
-            </linearGradient>
-            <linearGradient id="wg2" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#0028a0" stopOpacity="0.75"/>
-              <stop offset="50%" stopColor="#0045cc" stopOpacity="0.6"/>
-              <stop offset="100%" stopColor="#0028a0" stopOpacity="0.75"/>
-            </linearGradient>
-            <linearGradient id="wg3" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#bb0088" stopOpacity="0.38"/>
-              <stop offset="50%" stopColor="#dd00aa" stopOpacity="0.3"/>
-              <stop offset="100%" stopColor="#bb0088" stopOpacity="0.38"/>
-            </linearGradient>
-          </defs>
-          <path d="M0,130 C280,70 580,155 880,105 C1080,75 1300,118 1440,95 L1440,200 L0,200Z" fill="url(#wg3)"/>
-          <path d="M0,150 C230,105 470,158 720,135 C970,112 1210,152 1440,135 L1440,200 L0,200Z" fill="url(#wg2)"/>
-          <path d="M0,168 C350,148 710,172 1080,158 C1270,152 1370,164 1440,158 L1440,200 L0,200Z" fill="url(#wg1)"/>
-        </svg>
+        {/* Slow sweep highlight */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "linear-gradient(112deg, transparent 25%, rgba(0,70,200,0.07) 50%, transparent 75%)",
+          animation: "bgSweep 9s ease-in-out infinite",
+        }} />
+
+        {/* Pulsing blue orb left */}
+        <div style={{
+          position: "absolute", width: "700px", height: "700px", borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(0,55,190,0.2) 0%, transparent 68%)",
+          left: "-8%", top: "15%",
+          animation: "orb1 13s ease-in-out infinite",
+        }} />
+        {/* Pulsing purple orb right */}
+        <div style={{
+          position: "absolute", width: "500px", height: "500px", borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(90,0,175,0.17) 0%, transparent 68%)",
+          right: "-6%", top: "5%",
+          animation: "orb2 17s ease-in-out infinite",
+        }} />
+
+        {/* Grid lines (globe effect) */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: `
+            repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(0,80,200,0.04) 60px),
+            repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(0,80,200,0.04) 60px)
+          `,
+        }} />
+
+        {/* Stars */}
+        {Array.from({ length: 55 }).map((_, i) => (
+          <div key={i} style={{
+            position: "absolute",
+            width:  i % 8 === 0 ? "2.5px" : "1.5px",
+            height: i % 8 === 0 ? "2.5px" : "1.5px",
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.75)",
+            left: `${(i * 41.3 + 5) % 100}%`,
+            top:  `${(i * 23.7 + 3) % 62}%`,
+            animation: `star ${2.2 + (i % 5) * 0.5}s ease-in-out ${(i * 0.27) % 3}s infinite`,
+          }} />
+        ))}
+
+        {/* Bottom waves */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "230px" }}>
+          <svg viewBox="0 0 1440 230" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+            <defs>
+              <linearGradient id="wg1" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#3a0092" stopOpacity="0.85"/>
+                <stop offset="50%" stopColor="#5800bb" stopOpacity="0.75"/>
+                <stop offset="100%" stopColor="#3a0092" stopOpacity="0.85"/>
+              </linearGradient>
+              <linearGradient id="wg2" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#0022a0" stopOpacity="0.82"/>
+                <stop offset="50%" stopColor="#0040cc" stopOpacity="0.68"/>
+                <stop offset="100%" stopColor="#0022a0" stopOpacity="0.82"/>
+              </linearGradient>
+              <linearGradient id="wg3" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#cc0088" stopOpacity="0.45"/>
+                <stop offset="50%" stopColor="#ee00aa" stopOpacity="0.38"/>
+                <stop offset="100%" stopColor="#cc0088" stopOpacity="0.45"/>
+              </linearGradient>
+            </defs>
+            <path className="wave3" d="M0,135 C280,72 580,158 880,108 C1080,77 1300,120 1440,97 L1440,230 L0,230Z" fill="url(#wg3)"/>
+            <path className="wave2" d="M0,153 C235,108 472,160 720,138 C970,115 1212,155 1440,138 L1440,230 L0,230Z" fill="url(#wg2)"/>
+            <path className="wave1" d="M0,170 C352,150 712,175 1082,160 C1272,154 1372,166 1440,160 L1440,230 L0,230Z" fill="url(#wg1)"/>
+          </svg>
+        </div>
+
+        {/* Glowing horizon */}
+        <div style={{
+          position: "absolute", bottom: "205px", left: 0, right: 0, height: "2px",
+          background: "linear-gradient(90deg,transparent 0%,rgba(0,130,255,0.55) 18%,rgba(150,40,255,0.65) 50%,rgba(0,130,255,0.55) 82%,transparent 100%)",
+          filter: "blur(1.5px)",
+        }} />
       </div>
 
-      {/* ── MAIN ── */}
+      {/* ══════ CONTENT ══════ */}
       <div style={{
         position: "relative", zIndex: 10,
-        width: "100%", maxWidth: "960px",
-        padding: "12px 16px 24px",
-        flex: 1,
-        display: "flex", flexDirection: "column",
+        width: "100%", maxWidth: "1000px",
+        padding: "12px 14px 22px",
+        flex: 1, display: "flex", flexDirection: "column",
       }}>
 
         {/* Title */}
         <div style={{
           textAlign: "center", marginBottom: "10px",
-          fontSize: "11px", letterSpacing: "0.24em",
-          color: "rgba(110,185,255,0.5)", fontWeight: 600, textTransform: "uppercase",
+          fontSize: "11px", letterSpacing: "0.26em",
+          color: "rgba(100,178,255,0.44)", fontWeight: 600,
+          textTransform: "uppercase",
         }}>
           Eurovision Song Contest 2014 · Grand Final
         </div>
 
-        {/* Scoreboard */}
+        {/* ── SCOREBOARD ── */}
         <div style={{
-          background: "linear-gradient(180deg, rgba(3,12,40,0.97) 0%, rgba(5,16,50,0.95) 100%)",
+          background: "linear-gradient(180deg, rgba(2,9,34,0.97) 0%, rgba(3,13,44,0.95) 100%)",
           borderRadius: "6px 6px 0 0",
-          border: "1px solid rgba(18,60,145,0.5)",
+          border: "1px solid rgba(14,56,138,0.58)",
           borderBottom: "none",
           overflow: "hidden",
-          boxShadow: "0 6px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(55,125,255,0.12)",
+          boxShadow: "0 8px 55px rgba(0,0,0,0.78), inset 0 1px 0 rgba(45,115,255,0.13)",
         }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-            <div style={{ borderRight: "1px solid rgba(18,60,145,0.35)" }}>
-              {left.map(e => <ScoreRow key={e.id} entry={e} />)}
+          <div ref={containerRef} style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            <div style={{ borderRight: "1px solid rgba(14,56,138,0.38)" }}>
+              {left.map(e => (
+                <ScoreRow key={e.id} entry={e}
+                  isVoter={e.id === voter.id}
+                  alreadyVoted={voterGivenTo.has(e.id)}
+                  hasNext={!!nextPt}
+                  onClick={handleClick}
+                  isLeader={leaderIds.has(e.id)}
+                />
+              ))}
             </div>
             <div>
-              {right.map(e => <ScoreRow key={e.id} entry={e} />)}
+              {right.map(e => (
+                <ScoreRow key={e.id} entry={e}
+                  isVoter={e.id === voter.id}
+                  alreadyVoted={voterGivenTo.has(e.id)}
+                  hasNext={!!nextPt}
+                  onClick={handleClick}
+                  isLeader={leaderIds.has(e.id)}
+                />
+              ))}
             </div>
           </div>
         </div>
 
-        {/* ── BOTTOM PANEL — directly attached ── */}
+        {/* ── BOTTOM PANEL ── */}
         <div ref={panelRef} style={{
-          background: "linear-gradient(180deg, rgba(3,9,30,0.99) 0%, rgba(2,7,22,1) 100%)",
+          background: "linear-gradient(180deg, rgba(1,6,22,0.99) 0%, rgba(1,4,15,1) 100%)",
           borderRadius: "0 0 6px 6px",
-          border: "1px solid rgba(18,60,145,0.5)",
-          borderTop: "1px solid rgba(18,60,145,0.3)",
-          padding: "8px 12px 10px",
+          border: "1px solid rgba(14,56,138,0.58)",
+          borderTop: "1px solid rgba(14,56,138,0.32)",
+          padding: "8px 14px 10px",
         }}>
 
           {/* Voter row */}
           <div style={{
             display: "flex", alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: "8px",
-            paddingBottom: "7px",
-            borderBottom: "1px solid rgba(25,70,160,0.25)",
+            marginBottom: "8px", paddingBottom: "7px",
+            borderBottom: "1px solid rgba(20,60,150,0.3)",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
-              <img
-                src={flag(voter.cc)} alt={voter.name}
-                style={{ width: "36px", height: "24px", objectFit: "cover", borderRadius: "2px", boxShadow: "0 1px 5px rgba(0,0,0,0.55)" }}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <img src={flag(voter.cc)} alt={voter.name}
+                style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px", boxShadow: "0 1px 5px rgba(0,0,0,0.6)" }}
               />
-              <span style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.12em", color: "#a8d8ff" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.13em", color: "#a6d8ff" }}>
                 {voter.name}
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <span style={{ fontSize: "11px", letterSpacing: "0.1em", color: "rgba(110,175,255,0.5)" }}>
+              <span style={{ fontSize: "10.5px", letterSpacing: "0.1em", color: "rgba(95,168,255,0.5)" }}>
                 {voterIdx + 1} OF {VOTING_COUNTRIES.length} COUNTRIES VOTING
               </span>
               <div style={{ width: "100px", height: "3px", background: "rgba(255,255,255,0.1)", borderRadius: "2px", overflow: "hidden" }}>
                 <div style={{
                   height: "100%",
                   width: `${(voterIdx / VOTING_COUNTRIES.length) * 100}%`,
-                  background: "linear-gradient(90deg, #0070ff, #8820ff)",
+                  background: "linear-gradient(90deg,#0070ff,#8820ff)",
                   borderRadius: "2px", transition: "width 0.5s ease",
-                }}/>
+                }} />
               </div>
             </div>
           </div>
 
-          {/* Points row */}
+          {/* Points buttons 1→12 */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
             {POINTS_ORDER.map((pts, idx) => {
-              const used   = awardedCount[voterIdx] !== undefined && idx < (awardedCount[voterIdx] ?? 0);
+              const used   = idx < count;
               const isNext = pts === nextPt;
               const isBig  = pts === 12 || pts === 10;
-
               return (
                 <div key={pts} style={{
                   position: "relative",
-                  width:  isBig ? "60px" : "50px",
-                  height: isBig ? "54px" : "46px",
+                  width:  isBig ? "62px" : "52px",
+                  height: isBig ? "56px" : "47px",
                   borderRadius: "7px",
+                  overflow: "hidden",
                   background: used
                     ? "rgba(255,255,255,0.03)"
                     : isNext
-                      ? "linear-gradient(160deg, #2370e0 0%, #0e3ea8 45%, #0a2c85 100%)"
-                      : "linear-gradient(160deg, rgba(16,48,118,0.8) 0%, rgba(7,26,72,0.88) 100%)",
+                      ? "linear-gradient(158deg,#2a7aec 0%,#104ab8 44%,#0b32920 100%)"
+                      : "linear-gradient(158deg,rgba(13,44,115,0.85) 0%,rgba(5,22,70,0.92) 100%)",
                   border: isNext
-                    ? "1.5px solid rgba(100,180,255,0.8)"
+                    ? "1.5px solid rgba(95,182,255,0.88)"
                     : used
                       ? "1px solid rgba(255,255,255,0.04)"
-                      : "1px solid rgba(30,85,190,0.38)",
+                      : "1px solid rgba(26,80,188,0.42)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: isBig ? "20px" : "16px",
+                  fontSize: isBig ? "21px" : "17px",
                   fontWeight: 800,
-                  color: used ? "rgba(255,255,255,0.1)" : isNext ? "#ffffff" : "rgba(130,195,255,0.65)",
+                  color: used ? "rgba(255,255,255,0.08)" : isNext ? "#fff" : "rgba(120,192,255,0.65)",
                   boxShadow: isNext
-                    ? "0 0 16px rgba(0,110,255,0.65), 0 0 32px rgba(0,60,200,0.35), inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.3)"
-                    : "0 2px 6px rgba(0,0,0,0.5)",
-                  transform: isNext ? "scale(1.1)" : "scale(1)",
+                    ? "0 0 20px rgba(0,120,255,0.72),0 0 40px rgba(0,70,225,0.42),inset 0 1px 0 rgba(255,255,255,0.28),inset 0 -1px 0 rgba(0,0,0,0.35)"
+                    : "0 2px 7px rgba(0,0,0,0.55)",
+                  transform: isNext ? "scale(1.13)" : "scale(1)",
                   transition: "all 0.25s ease",
-                  overflow: "hidden",
                   cursor: "default",
                 }}>
                   {/* Crystal shine */}
                   {isNext && (
                     <div style={{
-                      position: "absolute", top: 0, left: 0, right: "45%", height: "44%",
-                      background: "linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 100%)",
-                      borderRadius: "6px 0 0 0", pointerEvents: "none",
-                    }}/>
+                      position: "absolute", top: 0, left: 0, right: "44%", height: "44%",
+                      background: "linear-gradient(138deg,rgba(255,255,255,0.3) 0%,transparent 100%)",
+                      pointerEvents: "none",
+                    }} />
                   )}
-                  <span style={{ position: "relative", zIndex: 1, textDecoration: used ? "line-through" : "none", opacity: used ? 0.15 : 1 }}>
-                    {pts}
+                  <span style={{ position: "relative", zIndex: 1 }}>
+                    {used ? "" : pts}
                   </span>
                 </div>
               );
             })}
           </div>
-
         </div>
-        {/* end bottom panel */}
-
       </div>
 
-      {/* ── FLYING BALLS ── */}
+      {/* ══════ FLYING BALLS ══════ */}
       {flyBalls.map(ball => {
-        const sz = ball.pts === 12 ? 52 : ball.pts === 10 ? 44 : 36;
+        const sz = ball.pts === 12 ? 54 : ball.pts === 10 ? 46 : 38;
         return (
           <div key={ball.id} style={{
-            position: "fixed",
-            left: ball.x1, top: ball.y1,
-            width: 0, height: 0,
-            zIndex: 500, pointerEvents: "none",
+            position: "fixed", left: ball.x1, top: ball.y1,
+            width: 0, height: 0, zIndex: 500, pointerEvents: "none",
             "--dx": `${ball.x2 - ball.x1}px`,
             "--dy": `${ball.y2 - ball.y1}px`,
-            animation: "escFly 0.7s cubic-bezier(0.4,0,0.55,1) forwards",
+            animation: "escFly 0.68s cubic-bezier(0.38,0,0.56,1) forwards",
           } as React.CSSProperties & Record<string, string>}>
             <div style={{
               width: sz, height: sz, borderRadius: "50%",
-              transform: "translate(-50%, -50%)",
+              transform: "translate(-50%,-50%)",
               background: ball.pts === 12
-                ? "radial-gradient(circle at 36% 30%, #fff7b0 0%, #FFD700 32%, #FF8800 75%, #cc4400 100%)"
+                ? "radial-gradient(circle at 35% 28%,#fff5a0 0%,#FFD700 30%,#FF8500 72%,#cc4000 100%)"
                 : ball.pts === 10
-                  ? "radial-gradient(circle at 36% 30%, #ffffa0 0%, #FFCC00 38%, #FF9900 100%)"
-                  : "radial-gradient(circle at 36% 30%, #cceeff 0%, #38aaff 38%, #0044cc 100%)",
+                  ? "radial-gradient(circle at 35% 28%,#ffff90 0%,#FFC800 35%,#FF9500 100%)"
+                  : "radial-gradient(circle at 35% 28%,#c8eeff 0%,#35a8ff 35%,#0040cc 100%)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "'Montserrat', sans-serif",
+              fontFamily: "'Montserrat',sans-serif",
               fontWeight: 900,
-              fontSize: ball.pts >= 10 ? "20px" : "15px",
+              fontSize: ball.pts >= 10 ? "21px" : "16px",
               color: "#fff",
               boxShadow: ball.pts === 12
-                ? "0 0 24px rgba(255,180,0,1), 0 0 48px rgba(255,80,0,0.8)"
+                ? "0 0 28px rgba(255,180,0,1),0 0 56px rgba(255,80,0,0.8)"
                 : ball.pts === 10
-                  ? "0 0 18px rgba(255,200,0,1), 0 0 36px rgba(255,140,0,0.6)"
-                  : "0 0 14px rgba(30,140,255,1), 0 0 28px rgba(0,80,220,0.6)",
-              textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-            }}>
-              {ball.pts}
-            </div>
+                  ? "0 0 22px rgba(255,200,0,1),0 0 44px rgba(255,130,0,0.6)"
+                  : "0 0 18px rgba(30,145,255,1),0 0 36px rgba(0,80,225,0.6)",
+              textShadow: "0 1px 4px rgba(0,0,0,0.75)",
+            }}>{ball.pts}</div>
           </div>
         );
       })}
 
-      {/* ── DOUZE POINTS ── */}
+      {/* ══════ DOUZE POINTS ══════ */}
       {douze && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 600,
           display: "flex", alignItems: "center", justifyContent: "center",
           pointerEvents: "none",
-          background: "radial-gradient(ellipse at center, rgba(255,150,0,0.1) 0%, transparent 60%)",
+          background: "radial-gradient(ellipse at center,rgba(255,140,0,0.13) 0%,transparent 62%)",
         }}>
           <div style={{ animation: "escDouze 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards", textAlign: "center" }}>
             <div style={{
-              fontSize: "clamp(50px,10vw,95px)",
-              fontWeight: 900,
-              letterSpacing: "0.04em",
-              fontFamily: "'Montserrat', sans-serif",
-              background: "linear-gradient(180deg, #fffbc0 0%, #FFD700 42%, #FF9300 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-              filter: "drop-shadow(0 0 30px rgba(255,185,0,0.95))",
+              fontSize: "clamp(52px,11vw,100px)",
+              fontWeight: 900, letterSpacing: "0.04em",
+              fontFamily: "'Montserrat',sans-serif",
+              background: "linear-gradient(180deg,#fffbc0 0%,#FFD700 42%,#FF9200 100%)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+              filter: "drop-shadow(0 0 34px rgba(255,185,0,0.97))",
               lineHeight: 1,
             }}>DOUZE POINTS!</div>
-            <div style={{ fontSize: "16px", letterSpacing: "0.45em", color: "rgba(255,210,70,0.6)", marginTop: "12px" }}>
-              ✦ ✦ ✦
-            </div>
+            <div style={{ fontSize: "16px", letterSpacing: "0.45em", color: "rgba(255,210,70,0.62)", marginTop: "12px" }}>✦ ✦ ✦</div>
           </div>
         </div>
       )}
 
       <style>{`
         @keyframes escFly {
-          0%   { transform: translate(0,0); opacity: 1; }
-          75%  { opacity: 1; }
-          100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+          0%   { transform:translate(0,0); opacity:1; }
+          72%  { opacity:1; }
+          100% { transform:translate(var(--dx),var(--dy)); opacity:0; }
         }
         @keyframes escDouze {
-          0%   { transform: scale(0.3) rotate(-3deg); opacity: 0; }
-          65%  { transform: scale(1.08) rotate(1deg); opacity: 1; }
-          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+          0%   { transform:scale(0.3) rotate(-3deg); opacity:0; }
+          65%  { transform:scale(1.08) rotate(1deg); opacity:1; }
+          100% { transform:scale(1) rotate(0deg); opacity:1; }
         }
-        div[style*="cursor: pointer"]:hover {
-          filter: brightness(1.12);
+        @keyframes bgSweep {
+          0%,100% { transform:translateX(-120%); }
+          50%      { transform:translateX(120%); }
         }
+        @keyframes orb1 {
+          0%,100% { transform:translate(0,0) scale(1); opacity:.7; }
+          50%      { transform:translate(55px,-38px) scale(1.14); opacity:1; }
+        }
+        @keyframes orb2 {
+          0%,100% { transform:translate(0,0) scale(1); opacity:.6; }
+          50%      { transform:translate(-45px,28px) scale(1.1); opacity:.9; }
+        }
+        @keyframes star {
+          0%,100% { opacity:.25; transform:scale(1); }
+          50%      { opacity:1;   transform:scale(1.9); }
+        }
+        @keyframes flagWave {
+          0%   { transform:skewX(0deg) scaleX(1); }
+          18%  { transform:skewX(2.5deg) scaleX(1.025); }
+          38%  { transform:skewX(-2deg) scaleX(0.99); }
+          58%  { transform:skewX(1.8deg) scaleX(1.015); }
+          78%  { transform:skewX(-1.2deg) scaleX(1); }
+          100% { transform:skewX(0deg) scaleX(1); }
+        }
+        .wave1 { animation: wm1 7s ease-in-out infinite; }
+        .wave2 { animation: wm2 9s ease-in-out infinite; }
+        .wave3 { animation: wm3 11s ease-in-out infinite; }
+        @keyframes wm1 { 0%,100%{transform:translateX(0)} 50%{transform:translateX(-28px)} }
+        @keyframes wm2 { 0%,100%{transform:translateX(0)} 50%{transform:translateX(22px)} }
+        @keyframes wm3 { 0%,100%{transform:translateX(0)} 50%{transform:translateX(-16px)} }
+        [data-id]:hover { filter: brightness(1.1); }
       `}</style>
     </div>
   );
