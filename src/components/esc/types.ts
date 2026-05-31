@@ -111,6 +111,8 @@ export type Entry = {
   flashedByVoter: number | null;
   is12: boolean;
   coveredPts: number | null;
+  // для tiebreak: сумма баллов от последних 3 голосующих стран
+  recentPts: number[];   // последние полученные баллы (храним все, берём последние 3)
 };
 
 export type FlyBall = {
@@ -129,3 +131,14 @@ export type DouzeEvent = {
   artist: string;
   ytId: string;
 } | null;
+
+// Голосование этапа 1-7: выбранная страна → балл
+export type PreVote = {
+  countryId: string;
+  pts: number;
+};
+
+// Баллы 1-7 (этап 1)
+export const LOW_POINTS  = [1, 2, 3, 4, 5, 6, 7] as const;
+// Баллы 8,10,12 (этап 2)
+export const HIGH_POINTS = [8, 10, 12] as const;

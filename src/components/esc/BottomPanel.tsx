@@ -1,13 +1,14 @@
-import { POINTS_ORDER, VOTING_COUNTRIES, flagUrl } from "./types";
+import { HIGH_POINTS, VOTING_COUNTRIES, flagUrl } from "./types";
 
 type Props = {
-  voterIdx:  number;
-  count:     number;
-  nextPt:    number | null;
-  panelRef:  React.RefObject<HTMLDivElement>;
+  voterIdx: number;
+  // сколько из HIGH_POINTS уже присвоено
+  highCount: number;
+  nextPt:   number | null;
+  panelRef: React.RefObject<HTMLDivElement>;
 };
 
-export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props) {
+export default function BottomPanel({ voterIdx, highCount, nextPt, panelRef }: Props) {
   const voter = VOTING_COUNTRIES[voterIdx % VOTING_COUNTRIES.length];
 
   return (
@@ -27,10 +28,9 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
         borderBottom: "1px solid rgba(20,60,150,0.3)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <img
-            src={flagUrl(voter.cc)} alt={voter.name}
-            style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px", boxShadow: "0 1px 5px rgba(0,0,0,0.6)" }}
-          />
+          <img src={flagUrl(voter.cc)} alt={voter.name}
+            style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px",
+              boxShadow: "0 1px 5px rgba(0,0,0,0.6)" }}/>
           <span style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.13em", color: "#a6d8ff" }}>
             {voter.name}
           </span>
@@ -45,23 +45,21 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
               width: `${(voterIdx / VOTING_COUNTRIES.length) * 100}%`,
               background: "linear-gradient(90deg,#0070ff,#8820ff)",
               borderRadius: "2px", transition: "width 0.5s ease",
-            }} />
+            }}/>
           </div>
         </div>
       </div>
 
-      {/* Points buttons 1 → 12 */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
-        {POINTS_ORDER.map((pts, idx) => {
-          const used   = idx < count;
+      {/* Only 8, 10, 12 buttons */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
+        {HIGH_POINTS.map((pts, idx) => {
+          const used   = idx < highCount;
           const isNext = pts === nextPt;
-          const isBig  = pts === 12 || pts === 10 || pts === 8;
           return (
             <div key={pts} style={{
               position: "relative",
-              width:  isBig ? "62px" : "52px",
-              height: isBig ? "56px" : "47px",
-              borderRadius: "7px",
+              width: "72px", height: "64px",
+              borderRadius: "8px",
               overflow: "hidden",
               background: used
                 ? "rgba(255,255,255,0.03)"
@@ -74,13 +72,12 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
                   ? "1px solid rgba(255,255,255,0.04)"
                   : "1px solid rgba(26,80,188,0.42)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize:   isBig ? "21px" : "17px",
-              fontWeight: 800,
+              fontSize: "24px", fontWeight: 800,
               color: used ? "rgba(255,255,255,0.08)" : isNext ? "#fff" : "rgba(120,192,255,0.65)",
               boxShadow: isNext
-                ? "0 0 20px rgba(0,120,255,0.72),0 0 40px rgba(0,70,225,0.42),inset 0 1px 0 rgba(255,255,255,0.28),inset 0 -1px 0 rgba(0,0,0,0.35)"
+                ? "0 0 22px rgba(0,120,255,0.75),0 0 44px rgba(0,70,225,0.45),inset 0 1px 0 rgba(255,255,255,0.28)"
                 : "0 2px 7px rgba(0,0,0,0.55)",
-              transform:  isNext ? "scale(1.13)" : "scale(1)",
+              transform: isNext ? "scale(1.13)" : "scale(1)",
               transition: "all 0.25s ease",
               cursor: "default",
             }}>
@@ -89,7 +86,7 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
                   position: "absolute", top: 0, left: 0, right: "44%", height: "44%",
                   background: "linear-gradient(138deg,rgba(255,255,255,0.3) 0%,transparent 100%)",
                   pointerEvents: "none",
-                }} />
+                }}/>
               )}
               <span style={{ position: "relative", zIndex: 1 }}>
                 {used ? "" : pts}
@@ -97,6 +94,15 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
             </div>
           );
         })}
+      </div>
+
+      {/* Hint */}
+      <div style={{
+        textAlign: "center", marginTop: "8px",
+        fontSize: "10px", letterSpacing: "0.15em",
+        color: "rgba(100,170,255,0.35)",
+      }}>
+        CLICK A COUNTRY IN THE TABLE TO AWARD {nextPt ?? "—"} POINTS
       </div>
     </div>
   );
