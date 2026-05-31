@@ -6,7 +6,7 @@ import VoterIntro from "@/components/esc/VoterIntro";
 import PreSelectionScreen from "@/components/esc/PreSelectionScreen";
 import {
   HIGH_POINTS, CONTESTANTS, VOTING_COUNTRIES, SONGS,
-  Entry, FlyBall, DouzeEvent, PreVote, flagUrl,
+  Entry, FlyBall, DouzeEvent, PreVote, flagEmoji,
 } from "@/components/esc/types";
 
 const FLY_MS           = 1400;
@@ -425,10 +425,11 @@ export default function Index() {
               background: "radial-gradient(circle,rgba(255,180,0,0.35) 0%,transparent 70%)",
               borderRadius: "50%", animation: "glow12 1.5s ease-in-out infinite alternate",
             }}/>
-            <img src={flagUrl(ev.receiverCc)} alt={ev.receiverName}
-              style={{ width: "200px", height: "133px", objectFit: "cover", borderRadius: "6px",
-                boxShadow: "0 0 40px rgba(255,180,0,0.7),0 8px 30px rgba(0,0,0,0.6)",
-                display: "block", position: "relative", zIndex: 1 }}/>
+            <span style={{
+              fontSize: "110px", lineHeight: 1,
+              display: "block", position: "relative", zIndex: 1,
+              filter: "drop-shadow(0 0 20px rgba(255,180,0,0.5))",
+            }}>{flagEmoji(ev.receiverCc)}</span>
           </div>
           <div style={{
             fontSize: "clamp(38px,8vw,76px)", fontWeight: 900, letterSpacing: "0.04em",
@@ -496,7 +497,7 @@ export default function Index() {
                 borderRadius: "10px", padding: "14px 18px", marginBottom: "10px", textAlign: "left",
               }}>
                 <div style={{ fontSize: "30px", flexShrink: 0 }}>{medals[idx]}</div>
-                <img src={flagUrl(e.cc)} alt={e.name} style={{ width: "52px", height: "34px", objectFit: "cover", borderRadius: "3px", boxShadow: "0 1px 6px rgba(0,0,0,0.6)", flexShrink: 0 }}/>
+                <span style={{ fontSize: "36px", lineHeight: 1, flexShrink: 0 }}>{flagEmoji(e.cc)}</span>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "0.07em" }}>{e.name}</div>
                   {song && <div style={{ fontSize: "12px", color: "rgba(180,218,255,0.7)", marginTop: "2px" }}>«{song.song}» — {song.artist}</div>}
@@ -536,8 +537,7 @@ export default function Index() {
           animation: "tableSlideIn 0.5s ease both",
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "8px" }}>
-            <img src={flagUrl(voter.cc)} alt={voter.name}
-              style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px" }}/>
+            <span style={{ fontSize: "28px", lineHeight: 1 }}>{flagEmoji(voter.cc)}</span>
             <span style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "0.1em", color: "#a6d8ff" }}>{voter.name}</span>
           </div>
           <div style={{ fontSize: "10px", letterSpacing: "0.22em", color: "rgba(100,178,255,0.45)", marginBottom: "22px" }}>
@@ -562,8 +562,7 @@ export default function Index() {
                   fontWeight: 900, fontSize: "16px", color: "#fff",
                   boxShadow: "0 0 10px rgba(40,140,255,0.6)",
                 }}>{v.pts}</div>
-                <img src={flagUrl(c.cc)} alt={c.name}
-                  style={{ width: "44px", height: "29px", objectFit: "cover", borderRadius: "3px", flexShrink: 0, boxShadow: "0 1px 5px rgba(0,0,0,0.5)" }}/>
+                <span style={{ fontSize: "28px", lineHeight: 1, flexShrink: 0 }}>{flagEmoji(c.cc)}</span>
                 <div style={{ flex: 1, textAlign: "left", fontSize: "15px", fontWeight: 600, letterSpacing: "0.06em" }}>{c.name}</div>
               </div>
             );

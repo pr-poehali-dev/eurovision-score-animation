@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CONTESTANTS, flagUrl, PreVote } from "./types";
+import { CONTESTANTS, flagEmoji, PreVote } from "./types";
 
 // Низкие баллы в порядке назначения: 1→7 (от меньшего к большему)
 const LOW_PTS = [1, 2, 3, 4, 5, 6, 7];
@@ -63,9 +63,7 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: "16px", maxWidth: "700px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "6px" }}>
-          <img src={flagUrl(voterCc)} alt={voterName}
-            style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.6)" }}/>
+          <span style={{ fontSize: "28px", lineHeight: 1 }}>{flagEmoji(voterCc)}</span>
           <span style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "0.1em", color: "#a6d8ff" }}>
             {voterName}
           </span>
@@ -105,14 +103,13 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
                 position: "relative",
               }}>
                 {selEntry && (
-                  <img src={flagUrl(selEntry.cc)} alt={selEntry.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+                  <span style={{ fontSize: "20px", lineHeight: 1 }}>{flagEmoji(selEntry.cc)}</span>
                 )}
                 {isDone && (
                   <div style={{
                     position: "absolute", inset: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: "rgba(0,0,0,0.45)",
+                    background: "rgba(0,0,0,0.5)",
                     fontSize: "13px", fontWeight: 900, color: "#fff",
                     textShadow: "0 1px 3px rgba(0,0,0,0.9)",
                   }}>{pts}</div>
@@ -200,9 +197,7 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 position: "relative",
               }}>
-                <img src={flagUrl(c.cc)} alt={c.name}
-                  style={{ width: "40px", height: "27px", objectFit: "cover", borderRadius: "2px",
-                    boxShadow: "0 1px 5px rgba(0,0,0,0.55)" }}/>
+                <span style={{ fontSize: "24px", lineHeight: 1 }}>{flagEmoji(c.cc)}</span>
                 {pts !== null && (
                   <div style={{
                     position: "absolute", inset: 0,
@@ -210,11 +205,12 @@ export default function PreSelectionScreen({ voterCc, voterName, voterCountryId,
                     zIndex: 3,
                   }}>
                     <div style={{
-                      width: "38px", height: "25px", borderRadius: "3px",
-                      background: "rgba(0,0,0,0.5)",
+                      width: "32px", height: "22px", borderRadius: "3px",
+                      background: "rgba(0,10,40,0.75)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontWeight: 900, fontSize: "14px", color: "#fff",
+                      fontWeight: 900, fontSize: "13px", color: "#fff",
                       textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+                      border: "1px solid rgba(80,140,255,0.3)",
                     }}>{pts}</div>
                   </div>
                 )}

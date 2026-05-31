@@ -1,6 +1,24 @@
 export const POINTS_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12];
 
-export const flagUrl = (cc: string) => `https://flagcdn.com/w80/${cc}.png`;
+// Emoji-флаги — работают без интернета на всех платформах
+const FLAG_EMOJI: Record<string, string> = {
+  al: "🇦🇱", am: "🇦🇲", at: "🇦🇹", az: "🇦🇿",
+  by: "🇧🇾", be: "🇧🇪", bg: "🇧🇬", hr: "🇭🇷",
+  cy: "🇨🇾", dk: "🇩🇰", ee: "🇪🇪", fi: "🇫🇮",
+  fr: "🇫🇷", de: "🇩🇪", gr: "🇬🇷", hu: "🇭🇺",
+  is: "🇮🇸", il: "🇮🇱", it: "🇮🇹", lv: "🇱🇻",
+  lt: "🇱🇹", mt: "🇲🇹", md: "🇲🇩", me: "🇲🇪",
+  nl: "🇳🇱", no: "🇳🇴", pl: "🇵🇱", pt: "🇵🇹",
+  ro: "🇷🇴", ru: "🇷🇺", sm: "🇸🇲", rs: "🇷🇸",
+  si: "🇸🇮", es: "🇪🇸", se: "🇸🇪", ch: "🇨🇭",
+  ua: "🇺🇦", gb: "🇬🇧", mk: "🇲🇰",
+};
+
+export const flagEmoji = (cc: string): string =>
+  FLAG_EMOJI[cc.toLowerCase()] ?? "🏳️";
+
+// Оставляем для обратной совместимости (больше не используется)
+export const flagUrl = flagEmoji;
 
 export const CONTESTANTS = [
   { id: "AT", name: "AUSTRIA",         cc: "at" },

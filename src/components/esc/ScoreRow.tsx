@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Entry, FlyBall, flagUrl } from "./types";
+import { Entry, FlyBall, flagEmoji } from "./types";
 
 // ── Анимированный счётчик ──
 export function useCountUp(target: number, duration = 1200): number {
@@ -73,47 +73,50 @@ export function ScoreRow({
           position: "relative", height: "100%",
         }}
       >
-        <img
-          src={flagUrl(entry.cc)}
-          alt={entry.name}
-          style={{
-            width: "44px", height: "29px",
-            objectFit: "cover", borderRadius: "2px",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.65)",
-            display: "block",
-            animation:       isLeader ? "flagWave 2.2s ease-in-out infinite" : "none",
-            transformOrigin: "left center",
-          }}
-        />
-        {/* Флаг закрыт изображением флага с цифрой балла */}
+        {/* Emoji флаг */}
+        <span style={{
+          fontSize: "26px", lineHeight: 1,
+          display: "block",
+          animation:       isLeader ? "flagWave 2.2s ease-in-out infinite" : "none",
+          transformOrigin: "left center",
+          filter: isVoter ? "grayscale(0.5)" : "none",
+        }}>
+          {flagEmoji(entry.cc)}
+        </span>
+
+        {/* Балл закрывает флаг до конца раунда */}
         {entry.coveredPts !== null && (
           <div style={{
             position: "absolute", inset: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
             zIndex: 5,
           }}>
-            <div style={{ position: "relative", width: "44px", height: "29px" }}>
-              <img
-                src={flagUrl(entry.cc)}
-                alt=""
-                style={{
-                  width: "44px", height: "29px",
-                  objectFit: "cover", borderRadius: "2px",
-                  display: "block",
-                  filter: "brightness(0.35) saturate(0.5)",
-                }}
-              />
-              <div style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "'Montserrat',sans-serif",
-                fontWeight: 900,
-                fontSize:   entry.coveredPts >= 10 ? "16px" : "14px",
-                color:      "#fff",
-                textShadow: "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8)",
-              }}>
-                {entry.coveredPts}
-              </div>
+            <div style={{
+              width: "38px", height: "28px",
+              borderRadius: "4px",
+              background: entry.coveredPts === 12
+                ? "linear-gradient(135deg,#FFD700,#FF8800)"
+                : entry.coveredPts === 10
+                  ? "linear-gradient(135deg,#FFC800,#FF9900)"
+                  : entry.coveredPts >= 8
+                    ? "linear-gradient(135deg,#4488ff,#0044cc)"
+                    : "linear-gradient(135deg,rgba(10,40,120,0.92),rgba(5,20,70,0.95))",
+              border: entry.coveredPts >= 8
+                ? "1px solid rgba(255,255,255,0.35)"
+                : "1px solid rgba(80,140,255,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Montserrat',sans-serif",
+              fontWeight: 900,
+              fontSize:   entry.coveredPts >= 10 ? "15px" : "13px",
+              color:      "#fff",
+              boxShadow: entry.coveredPts === 12
+                ? "0 0 10px rgba(255,160,0,0.8)"
+                : entry.coveredPts >= 8
+                  ? "0 0 8px rgba(40,100,255,0.6)"
+                  : "none",
+              textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+            }}>
+              {entry.coveredPts}
             </div>
           </div>
         )}
@@ -146,12 +149,14 @@ export function ScoreRow({
   );
 }
 
-// ── Летящие шары ──
+// ── Летящие шары (emoji вместо img) ──
 export function FlyBalls({ balls }: { balls: FlyBall[] }) {
   return (
     <>
       {balls.map(ball => {
-        const sz = ball.pts === 12 ? 54 : ball.pts === 10 ? 46 : 44;
+        const sz = ball.pts === 12 ? 52 : ball.pts === 10 ? 46 : 40;
+        const isGold = ball.pts >= 10;
+        const isMid  = ball.pts === 8;
         return (
           <div key={ball.id} style={{
             position: "fixed", left: ball.x1, top: ball.y1,
@@ -160,43 +165,27 @@ export function FlyBalls({ balls }: { balls: FlyBall[] }) {
             "--dy": `${ball.y2 - ball.y1}px`,
             animation: "escFly 1.4s cubic-bezier(0.25,0.1,0.25,1) forwards",
           } as React.CSSProperties & Record<string, string>}>
-            {/* Флаг-форма шара — прямоугольный как флаг */}
             <div style={{
-              width:  `${sz * 1.5}px`,
+              width:  `${sz}px`,
               height: `${sz}px`,
               transform: "translate(-50%,-50%)",
-              position: "relative",
-              borderRadius: "3px",
-              overflow: "hidden",
-              boxShadow: ball.pts === 12
-                ? "0 0 28px rgba(255,180,0,1), 0 0 56px rgba(255,80,0,0.8)"
-                : ball.pts === 10
-                  ? "0 0 22px rgba(255,200,0,1), 0 0 44px rgba(255,130,0,0.6)"
-                  : "0 0 18px rgba(30,145,255,1), 0 0 36px rgba(0,80,225,0.6)",
+              borderRadius: "50%",
+              background: isGold
+                ? "radial-gradient(circle at 35% 30%, #fff5a0 0%, #FFD700 35%, #FF8800 100%)"
+                : isMid
+                  ? "radial-gradient(circle at 35% 30%, #aad4ff 0%, #4488ff 40%, #0044cc 100%)"
+                  : "radial-gradient(circle at 35% 30%, #c8e8ff 0%, #3399ee 40%, #0033aa 100%)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Montserrat',sans-serif",
+              fontWeight: 900,
+              fontSize: ball.pts >= 10 ? "22px" : "17px",
+              color: "#fff",
+              boxShadow: isGold
+                ? "0 0 24px rgba(255,200,0,1), 0 0 48px rgba(255,100,0,0.7)"
+                : "0 0 18px rgba(40,120,255,0.9), 0 0 36px rgba(0,80,200,0.5)",
+              textShadow: "0 1px 4px rgba(0,0,0,0.7)",
             }}>
-              {/* Фоновый флаг затемнённый */}
-              <img
-                src={`https://flagcdn.com/w80/${ball.targetCc}.png`}
-                alt=""
-                style={{
-                  position: "absolute", inset: 0,
-                  width: "100%", height: "100%",
-                  objectFit: "cover",
-                  filter: "brightness(0.35) saturate(0.5)",
-                }}
-              />
-              {/* Цифра поверх */}
-              <div style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "'Montserrat',sans-serif",
-                fontWeight: 900,
-                fontSize: ball.pts >= 10 ? "22px" : "17px",
-                color: "#fff",
-                textShadow: "0 1px 5px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)",
-              }}>
-                {ball.pts}
-              </div>
+              {ball.pts}
             </div>
           </div>
         );
@@ -225,7 +214,7 @@ export function DouzeOverlay({ show }: { show: boolean }) {
           filter: "drop-shadow(0 0 34px rgba(255,185,0,0.97))",
           lineHeight: 1,
         }}>DOUZE POINTS!</div>
-        <div style={{ fontSize: "16px", letterSpacing: "0.45em", color: "rgba(255,210,70,0.62)", marginTop: "12px" }}>
+        <div style={{ fontSize: "16px", letterSpacing: "0.4em", color: "rgba(255,210,70,0.65)", marginTop: "10px" }}>
           ✦ ✦ ✦
         </div>
       </div>

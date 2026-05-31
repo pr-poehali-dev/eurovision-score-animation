@@ -1,4 +1,4 @@
-import { HIGH_POINTS, VOTING_COUNTRIES, flagUrl } from "./types";
+import { HIGH_POINTS, VOTING_COUNTRIES, flagEmoji } from "./types";
 
 type Props = {
   voterIdx: number;
@@ -28,9 +28,7 @@ export default function BottomPanel({ voterIdx, highCount, nextPt, panelRef }: P
         borderBottom: "1px solid rgba(20,60,150,0.3)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <img src={flagUrl(voter.cc)} alt={voter.name}
-            style={{ width: "38px", height: "25px", objectFit: "cover", borderRadius: "2px",
-              boxShadow: "0 1px 5px rgba(0,0,0,0.6)" }}/>
+          <span style={{ fontSize: "28px", lineHeight: 1 }}>{flagEmoji(voter.cc)}</span>
           <span style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.13em", color: "#a6d8ff" }}>
             {voter.name}
           </span>
