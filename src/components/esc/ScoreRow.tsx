@@ -85,40 +85,35 @@ export function ScoreRow({
           }}
         />
 
-        {/* Балл закрывает флаг до конца раунда */}
+        {/* Балл — прямоугольник точно по размеру флага, полностью перекрывает */}
         {entry.coveredPts !== null && (
           <div style={{
-            position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
+            position: "absolute",
+            // точно совпадает с размером FlagSvg (42×28)
+            width: "42px", height: "28px",
+            borderRadius: "2px",
             zIndex: 5,
+            background: entry.coveredPts === 12
+              ? "linear-gradient(135deg,#FFE066 0%,#FFD700 40%,#FF8800 100%)"
+              : entry.coveredPts === 10
+                ? "linear-gradient(135deg,#FFE566 0%,#FFC800 45%,#FF9900 100%)"
+                : entry.coveredPts === 8
+                  ? "linear-gradient(135deg,#6abaff 0%,#4488ff 45%,#0044cc 100%)"
+                  : "linear-gradient(135deg,#3a6fcc 0%,#1a4aaa 50%,#0a2880 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "'Montserrat',sans-serif",
+            fontWeight: 900,
+            fontSize: entry.coveredPts >= 10 ? "16px" : entry.coveredPts >= 8 ? "15px" : "13px",
+            color: "#fff",
+            boxShadow: entry.coveredPts === 12
+              ? "0 0 12px rgba(255,180,0,0.9), 0 0 4px rgba(0,0,0,0.4)"
+              : entry.coveredPts >= 8
+                ? "0 0 10px rgba(40,120,255,0.7), 0 0 4px rgba(0,0,0,0.4)"
+                : "0 0 4px rgba(0,0,0,0.5)",
+            textShadow: "0 1px 3px rgba(0,0,0,0.7)",
+            border: "1px solid rgba(255,255,255,0.2)",
           }}>
-            <div style={{
-              width: "38px", height: "28px",
-              borderRadius: "4px",
-              background: entry.coveredPts === 12
-                ? "linear-gradient(135deg,#FFD700,#FF8800)"
-                : entry.coveredPts === 10
-                  ? "linear-gradient(135deg,#FFC800,#FF9900)"
-                  : entry.coveredPts >= 8
-                    ? "linear-gradient(135deg,#4488ff,#0044cc)"
-                    : "linear-gradient(135deg,rgba(10,40,120,0.92),rgba(5,20,70,0.95))",
-              border: entry.coveredPts >= 8
-                ? "1px solid rgba(255,255,255,0.35)"
-                : "1px solid rgba(80,140,255,0.4)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "'Montserrat',sans-serif",
-              fontWeight: 900,
-              fontSize:   entry.coveredPts >= 10 ? "15px" : "13px",
-              color:      "#fff",
-              boxShadow: entry.coveredPts === 12
-                ? "0 0 10px rgba(255,160,0,0.8)"
-                : entry.coveredPts >= 8
-                  ? "0 0 8px rgba(40,100,255,0.6)"
-                  : "none",
-              textShadow: "0 1px 3px rgba(0,0,0,0.8)",
-            }}>
-              {entry.coveredPts}
-            </div>
+            {entry.coveredPts}
           </div>
         )}
       </div>
@@ -150,12 +145,14 @@ export function ScoreRow({
   );
 }
 
-// ── Летящие шары (emoji вместо img) ──
+// ── Летящие шары — прямоугольник как флаг ──
 export function FlyBalls({ balls }: { balls: FlyBall[] }) {
   return (
     <>
       {balls.map(ball => {
-        const sz = ball.pts === 12 ? 52 : ball.pts === 10 ? 46 : 40;
+        // Размер совпадает с cover-прямоугольником на флаге (42×28), масштабируем для видимости
+        const w = ball.pts === 12 ? 70 : ball.pts === 10 ? 63 : ball.pts === 8 ? 63 : 56;
+        const h = Math.round(w * (28 / 42)); // сохраняем пропорции флага
         const isGold = ball.pts >= 10;
         const isMid  = ball.pts === 8;
         return (
@@ -166,25 +163,29 @@ export function FlyBalls({ balls }: { balls: FlyBall[] }) {
             "--dy": `${ball.y2 - ball.y1}px`,
             animation: "escFly 1.4s cubic-bezier(0.25,0.1,0.25,1) forwards",
           } as React.CSSProperties & Record<string, string>}>
+            {/* Прямоугольник — пропорции флага */}
             <div style={{
-              width:  `${sz}px`,
-              height: `${sz}px`,
+              width:  `${w}px`,
+              height: `${h}px`,
               transform: "translate(-50%,-50%)",
-              borderRadius: "50%",
+              borderRadius: "3px",
               background: isGold
-                ? "radial-gradient(circle at 35% 30%, #fff5a0 0%, #FFD700 35%, #FF8800 100%)"
+                ? "linear-gradient(135deg,#FFE066 0%,#FFD700 40%,#FF8800 100%)"
                 : isMid
-                  ? "radial-gradient(circle at 35% 30%, #aad4ff 0%, #4488ff 40%, #0044cc 100%)"
-                  : "radial-gradient(circle at 35% 30%, #c8e8ff 0%, #3399ee 40%, #0033aa 100%)",
+                  ? "linear-gradient(135deg,#6abaff 0%,#4488ff 45%,#0044cc 100%)"
+                  : "linear-gradient(135deg,#3a6fcc 0%,#1a4aaa 50%,#0a2880 100%)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "'Montserrat',sans-serif",
               fontWeight: 900,
-              fontSize: ball.pts >= 10 ? "22px" : "17px",
+              fontSize: ball.pts >= 10 ? "24px" : ball.pts === 8 ? "22px" : "18px",
               color: "#fff",
               boxShadow: isGold
-                ? "0 0 24px rgba(255,200,0,1), 0 0 48px rgba(255,100,0,0.7)"
-                : "0 0 18px rgba(40,120,255,0.9), 0 0 36px rgba(0,80,200,0.5)",
-              textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                ? "0 0 28px rgba(255,200,0,1), 0 0 52px rgba(255,100,0,0.7)"
+                : isMid
+                  ? "0 0 22px rgba(40,140,255,0.9), 0 0 40px rgba(0,80,200,0.6)"
+                  : "0 0 18px rgba(40,100,255,0.8), 0 0 32px rgba(0,60,180,0.5)",
+              textShadow: "0 1px 5px rgba(0,0,0,0.8)",
+              border: "1px solid rgba(255,255,255,0.25)",
             }}>
               {ball.pts}
             </div>
