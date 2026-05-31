@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { flagEmoji } from "./types";
+import FlagSvg from "./flags";
 
 // Координаты стран на карте Европы (SVG viewBox 0 0 900 600)
 const COUNTRY_COORDS: Record<string, { x: number; y: number }> = {
@@ -166,7 +166,7 @@ export default function VoterIntro({ voterCc, voterName, voterIdx, total, onDone
           animation: "cardPop 0.4s cubic-bezier(0.34,1.4,0.64,1) 0.2s both",
           zIndex: 10,
         }}>
-          <span style={{ fontSize: "28px", lineHeight: 1, flexShrink: 0 }}>{flagEmoji(voterCc.toLowerCase())}</span>
+          <FlagSvg cc={voterCc.toLowerCase()} width={36} height={24} style={{ flexShrink: 0 }} />
           <div>
             <div style={{
               fontSize: "14px", fontWeight: 800,

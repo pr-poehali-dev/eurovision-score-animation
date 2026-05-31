@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Entry, FlyBall, flagEmoji } from "./types";
+import { Entry, FlyBall } from "./types";
+import FlagSvg from "./flags";
 
 // ── Анимированный счётчик ──
 export function useCountUp(target: number, duration = 1200): number {
@@ -73,16 +74,16 @@ export function ScoreRow({
           position: "relative", height: "100%",
         }}
       >
-        {/* Emoji флаг */}
-        <span style={{
-          fontSize: "26px", lineHeight: 1,
-          display: "block",
-          animation:       isLeader ? "flagWave 2.2s ease-in-out infinite" : "none",
-          transformOrigin: "left center",
-          filter: isVoter ? "grayscale(0.5)" : "none",
-        }}>
-          {flagEmoji(entry.cc)}
-        </span>
+        {/* SVG флаг */}
+        <FlagSvg
+          cc={entry.cc}
+          width={42} height={28}
+          style={{
+            animation:       isLeader ? "flagWave 2.2s ease-in-out infinite" : "none",
+            transformOrigin: "left center",
+            opacity: isVoter ? 0.5 : 1,
+          }}
+        />
 
         {/* Балл закрывает флаг до конца раунда */}
         {entry.coveredPts !== null && (
