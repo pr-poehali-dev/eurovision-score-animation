@@ -1,10 +1,9 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useLayoutEffect } from "react";
 
-const POINTS_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12];
+// Порядок присвоения баллов: от 12 вниз до 1 (пропуская 9 и 11)
+const POINTS_ORDER = [12, 10, 8, 7, 6, 5, 4, 3, 2, 1];
 
-// flagcdn.com country codes (ISO 3166-1 alpha-2, lowercase)
-const flag = (code: string) =>
-  `https://flagcdn.com/w40/${code.toLowerCase()}.png`;
+const flag = (cc: string) => `https://flagcdn.com/w40/${cc}.png`;
 
 const CONTESTANTS = [
   { id: "AT", name: "AUSTRIA",         cc: "at" },
@@ -75,13 +74,14 @@ const VOTING_COUNTRIES = [
   { id: "UA", name: "UKRAINE",         cc: "ua" },
 ];
 
-type CountryScore = {
+type Entry = {
   id: string;
   name: string;
   cc: string;
   score: number;
   rank: number;
-  flash: boolean;
+  // which voter index last awarded points (flash until voter changes)
+  flashedByVoter: number | null;
   lastPts: number | null;
 };
 
@@ -92,29 +92,38 @@ type FlyBall = {
   x2: number; y2: number;
 };
 
-// Key: voter index (unique per round), value: array of awarded points
-const KEY = (voterIdx: number) => `v${voterIdx}`;
-
 export default function Index() {
-  const [scores, setScores] = useState<CountryScore[]>(
-    CONTESTANTS.map((c, i) => ({ ...c, score: 0, rank: i + 1, flash: false, lastPts: null }))
+  const [entries, setEntries] = useState<Entry[]>(
+    CONTESTANTS.map((c, i) => ({
+      ...c, score: 0, rank: i + 1,
+      flashedByVoter: null, lastPts: null,
+    }))
   );
+  // voterIdx indexes into VOTING_COUNTRIES
   const [voterIdx, setVoterIdx] = useState(0);
-  const [givenPts, setGivenPts] = useState<Record<string, number[]>>({});
+  // givenTo[voterIdx] = Set of contestant IDs already voted for
+  const [givenTo, setGivenTo] = useState<Record<number, Set<string>>>({});
+  // awardedPts[voterIdx] = number of points awarded so far (index into POINTS_ORDER)
+  const [awardedCount, setAwardedCount] = useState<Record<number, number>>({});
+
   const [flyBalls, setFlyBalls] = useState<FlyBall[]>([]);
   const [ballId, setBallId] = useState(0);
   const [douze, setDouze] = useState(false);
+  const [blocked, setBlocked] = useState(false); // prevent double-click during animation
 
-  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
-  const flagCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
+  // For FLIP animation
+  const prevPositions = useRef<Record<string, DOMRect>>({});
+  const rowEls = useRef<Record<string, HTMLDivElement | null>>({});
+  const flagEls = useRef<Record<string, HTMLDivElement | null>>({});
   const audioRef = useRef<AudioContext | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const voter = VOTING_COUNTRIES[voterIdx % VOTING_COUNTRIES.length];
-  const vKey = KEY(voterIdx);
-  const usedPts = givenPts[vKey] || [];
-  const remainingPts = POINTS_ORDER.filter(p => !usedPts.includes(p));
-  const nextPt = remainingPts.length > 0 ? remainingPts[remainingPts.length - 1] : null;
+  const count = awardedCount[voterIdx] ?? 0;
+  const nextPt = count < POINTS_ORDER.length ? POINTS_ORDER[count] : null;
+  const voterGivenTo = givenTo[voterIdx] ?? new Set<string>();
 
+  // ── Sound ──
   const playSound = useCallback((pts: number) => {
     try {
       if (!audioRef.current) audioRef.current = new AudioContext();
@@ -144,160 +153,222 @@ export default function Index() {
     } catch (_e) { /* no audio */ }
   }, []);
 
-  const handleRowClick = useCallback((targetId: string) => {
+  // ── FLIP: save positions before re-render, animate after ──
+  const savePositions = useCallback(() => {
+    prevPositions.current = {};
+    Object.entries(rowEls.current).forEach(([id, el]) => {
+      if (el) prevPositions.current[id] = el.getBoundingClientRect();
+    });
+  }, []);
+
+  const animateFlip = useCallback(() => {
+    Object.entries(rowEls.current).forEach(([id, el]) => {
+      if (!el) return;
+      const prev = prevPositions.current[id];
+      if (!prev) return;
+      const curr = el.getBoundingClientRect();
+      const dy = prev.top - curr.top;
+      if (Math.abs(dy) < 1) return;
+      el.style.transform = `translateY(${dy}px)`;
+      el.style.transition = "none";
+      requestAnimationFrame(() => {
+        el.style.transform = "translateY(0)";
+        el.style.transition = "transform 0.55s cubic-bezier(0.22,0.61,0.36,1)";
+      });
+    });
+  }, []);
+
+  // ── Click handler ──
+  const handleClick = useCallback((targetId: string) => {
+    if (blocked) return;
     if (!nextPt) return;
-    // Can't vote for yourself
+    // Can't vote for self
     if (targetId === voter.id) return;
+    // Can't vote twice for same country this round
+    if (voterGivenTo.has(targetId)) return;
 
-    const targetRow = rowRefs.current[targetId];
-    const flagCell = flagCellRefs.current[targetId];
-    if (!targetRow || !flagCell) return;
+    const flagEl = flagEls.current[targetId];
+    if (!flagEl) return;
 
-    const fRect = flagCell.getBoundingClientRect();
-    // Ball starts from active points button area (bottom center)
-    const startX = window.innerWidth / 2;
-    const startY = window.innerHeight - 90;
-    // Ball lands ON TOP of the flag cell
-    const endX = fRect.left + fRect.width / 2;
-    const endY = fRect.top + fRect.height / 2;
+    const fRect = flagEl.getBoundingClientRect();
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    const startX = (panelRect ? panelRect.left + panelRect.width / 2 : window.innerWidth / 2);
+    const startY = (panelRect ? panelRect.top + panelRect.height / 2 : window.innerHeight - 80);
 
     const newBall: FlyBall = {
       id: ballId, pts: nextPt,
       x1: startX, y1: startY,
-      x2: endX, y2: endY,
+      x2: fRect.left + fRect.width / 2,
+      y2: fRect.top + fRect.height / 2,
     };
 
+    setBlocked(true);
     setBallId(b => b + 1);
     setFlyBalls(prev => [...prev, newBall]);
     if (nextPt === 12) setDouze(true);
     playSound(nextPt);
 
-    const newUsed = [...usedPts, nextPt];
-    setGivenPts(prev => ({ ...prev, [vKey]: newUsed }));
+    // Update state immediately (before ball lands — optimistic)
+    const pts = nextPt;
+    const newCount = count + 1;
+    setAwardedCount(prev => ({ ...prev, [voterIdx]: newCount }));
+    setGivenTo(prev => {
+      const s = new Set(prev[voterIdx] ?? new Set<string>());
+      s.add(targetId);
+      return { ...prev, [voterIdx]: s };
+    });
 
-    // After ball arrives → flash row, update scores
+    // Ball lands → update scores + FLIP animation
     setTimeout(() => {
       setFlyBalls(prev => prev.filter(b => b.id !== newBall.id));
 
-      setScores(prev => {
-        const updated = prev.map(s =>
-          s.id === targetId
-            ? { ...s, score: s.score + nextPt, flash: true, lastPts: nextPt }
-            : s
+      savePositions();
+
+      setEntries(prev => {
+        const updated = prev.map(e =>
+          e.id === targetId
+            ? { ...e, score: e.score + pts, flashedByVoter: voterIdx, lastPts: pts }
+            : e
         );
         const sorted = [...updated].sort((a, b) =>
           b.score - a.score || a.name.localeCompare(b.name)
         );
-        return sorted.map((s, i) => ({ ...s, rank: i + 1 }));
+        return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
       });
 
-      // Remove flash after 1.4s
-      setTimeout(() => {
-        setScores(prev =>
-          prev.map(s => s.id === targetId ? { ...s, flash: false, lastPts: null } : s)
-        );
-        if (nextPt === 12) setDouze(false);
-      }, 1400);
+      // FLIP after DOM update
+      requestAnimationFrame(() => {
+        requestAnimationFrame(animateFlip);
+      });
 
-      // All 10 points awarded → next voter
-      if (newUsed.length >= POINTS_ORDER.length) {
-        setTimeout(() => setVoterIdx(v => v + 1), 1800);
+      if (pts === 12) setTimeout(() => setDouze(false), 2000);
+
+      // All 10 points awarded → advance to next voter
+      if (newCount >= POINTS_ORDER.length) {
+        setTimeout(() => {
+          // Clear flash for all entries that were flashed by this voter
+          setEntries(prev => prev.map(e =>
+            e.flashedByVoter === voterIdx ? { ...e, flashedByVoter: null, lastPts: null } : e
+          ));
+          setVoterIdx(v => v + 1);
+        }, 1800);
       }
-    }, 750);
-  }, [nextPt, voter.id, usedPts, ballId, vKey, playSound]);
 
-  const left  = scores.slice(0, Math.ceil(scores.length / 2));
-  const right = scores.slice(Math.ceil(scores.length / 2));
+      setBlocked(false);
+    }, 700);
+  }, [blocked, nextPt, voter.id, voterGivenTo, ballId, count, voterIdx, playSound, savePositions, animateFlip]);
+
+  // When voter changes → clear flash for previous voter immediately
+  useLayoutEffect(() => {
+    // nothing extra needed — flash cleared in timeout above
+  }, [voterIdx]);
+
+  const left  = entries.slice(0, Math.ceil(entries.length / 2));
+  const right = entries.slice(Math.ceil(entries.length / 2));
 
   const RankBadge = ({ rank }: { rank: number }) =>
     rank <= 7 ? (
       <div style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: "26px", height: "22px",
+        width: "30px", height: "26px",
         background: "linear-gradient(180deg, #1e5299 0%, #0d2d63 100%)",
-        border: "1px solid rgba(90,160,255,0.55)",
+        border: "1px solid rgba(90,160,255,0.6)",
         borderRadius: "4px",
-        fontSize: "12px", fontWeight: 700,
+        fontSize: "14px", fontWeight: 700,
         color: "#8fd4ff",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 4px rgba(0,0,0,0.5)",
-        letterSpacing: 0,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 4px rgba(0,0,0,0.5)",
+        flexShrink: 0,
       }}>{rank}</div>
-    ) : <div style={{ width: "26px" }} />;
+    ) : <div style={{ width: "30px", flexShrink: 0 }} />;
 
-  const ScoreRow = ({ entry }: { entry: CountryScore }) => {
-    const isFlash = entry.flash;
+  // A row in one column
+  const ScoreRow = ({ entry }: { entry: Entry }) => {
+    const isFlash = entry.flashedByVoter !== null;
+    const isVoter = entry.id === voter.id;
+    const alreadyVoted = voterGivenTo.has(entry.id);
+    const unclickable = isVoter || alreadyVoted || !nextPt;
+
     return (
-      <tr
-        ref={el => { rowRefs.current[entry.id] = el; }}
-        onClick={() => handleRowClick(entry.id)}
+      <div
+        ref={el => { rowEls.current[entry.id] = el; }}
+        onClick={() => !unclickable && handleClick(entry.id)}
         style={{
-          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 0,
+          padding: "0 8px",
+          height: "46px",
           background: isFlash
-            ? "linear-gradient(90deg, rgba(30,120,255,0.55) 0%, rgba(10,60,180,0.35) 60%, rgba(5,30,100,0.2) 100%)"
+            ? "linear-gradient(90deg, rgba(20,110,255,0.55) 0%, rgba(8,55,180,0.38) 55%, rgba(3,20,80,0.18) 100%)"
             : "transparent",
-          transition: "background 0.25s ease",
           borderBottom: "1px solid rgba(255,255,255,0.05)",
+          cursor: unclickable ? "default" : "pointer",
+          opacity: isVoter ? 0.55 : 1,
+          transition: "background 0.3s ease, opacity 0.3s",
+          position: "relative",
           userSelect: "none",
         }}
       >
-        {/* Rank */}
-        <td style={{ width: "34px", padding: "4px 2px 4px 8px", verticalAlign: "middle" }}>
+        {/* Rank badge */}
+        <div style={{ width: "36px", flexShrink: 0 }}>
           <RankBadge rank={entry.rank} />
-        </td>
+        </div>
 
-        {/* Flag — real image, with relative position so flying ball can overlap */}
-        <td
-          ref={el => { flagCellRefs.current[entry.id] = el; }}
-          style={{ width: "44px", padding: "3px 4px", verticalAlign: "middle", position: "relative" }}
+        {/* Flag — target for ball */}
+        <div
+          ref={el => { flagEls.current[entry.id] = el; }}
+          style={{ width: "50px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}
         >
           <img
             src={flag(entry.cc)}
             alt={entry.name}
             style={{
-              width: "36px", height: "24px",
+              width: "40px", height: "27px",
               objectFit: "cover",
               borderRadius: "2px",
               display: "block",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+              boxShadow: "0 1px 5px rgba(0,0,0,0.55)",
             }}
           />
-        </td>
+        </div>
 
-        {/* Name */}
-        <td style={{
-          padding: "4px 6px 4px 2px",
-          verticalAlign: "middle",
-          fontSize: "13.5px",
+        {/* Country name */}
+        <div style={{
+          flex: 1,
+          fontSize: "15px",
           fontWeight: 500,
-          letterSpacing: "0.06em",
-          color: isFlash ? "#ffffff" : "rgba(190,225,255,0.92)",
+          letterSpacing: "0.07em",
+          color: isFlash ? "#ffffff" : "rgba(185,220,255,0.92)",
           fontFamily: "'Montserrat', sans-serif",
           whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          transition: "color 0.25s",
         }}>
           {entry.name}
-        </td>
+        </div>
 
         {/* Score */}
-        <td style={{
-          width: "46px", padding: "4px 10px 4px 2px",
-          textAlign: "right", verticalAlign: "middle",
-          fontSize: isFlash ? "17px" : "15px",
+        <div style={{
+          width: "52px",
+          textAlign: "right",
+          flexShrink: 0,
+          fontSize: isFlash ? "20px" : "17px",
           fontWeight: 700,
           color: isFlash ? "#FFD700" : "#72c4f0",
           fontFamily: "'Montserrat', sans-serif",
           transition: "font-size 0.2s, color 0.2s",
-          whiteSpace: "nowrap",
         }}>
           {entry.score}
-        </td>
-      </tr>
+        </div>
+      </div>
     );
   };
 
   return (
     <div style={{
       minHeight: "100vh",
-      background: "linear-gradient(180deg, #04091a 0%, #06112a 35%, #081830 65%, #04091a 100%)",
+      background: "linear-gradient(180deg, #04091a 0%, #06102a 35%, #07152e 65%, #04091a 100%)",
       fontFamily: "'Montserrat', sans-serif",
       color: "#fff",
       position: "relative",
@@ -307,211 +378,206 @@ export default function Index() {
       alignItems: "center",
     }}>
 
-      {/* ── BG: subtle globe glow ── */}
+      {/* BG glow */}
       <div style={{
         position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
         background: `
-          radial-gradient(ellipse 140% 60% at 50% 110%, rgba(0,40,140,0.55) 0%, transparent 55%),
-          radial-gradient(ellipse 80% 40% at 20% 70%, rgba(80,0,160,0.18) 0%, transparent 50%)
+          radial-gradient(ellipse 160% 55% at 50% 115%, rgba(0,35,130,0.6) 0%, transparent 55%),
+          radial-gradient(ellipse 70% 35% at 15% 75%, rgba(80,0,150,0.2) 0%, transparent 50%)
         `,
       }} />
 
-      {/* ── BG: bottom waves (purple/blue like original) ── */}
+      {/* Bottom waves */}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: "200px", zIndex: 0, pointerEvents: "none" }}>
         <svg viewBox="0 0 1440 200" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
           <defs>
-            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#380080" stopOpacity="0.7"/>
-              <stop offset="50%" stopColor="#5500aa" stopOpacity="0.6"/>
-              <stop offset="100%" stopColor="#380080" stopOpacity="0.7"/>
+            <linearGradient id="wg1" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#40009a" stopOpacity="0.75"/>
+              <stop offset="50%" stopColor="#6000bb" stopOpacity="0.65"/>
+              <stop offset="100%" stopColor="#40009a" stopOpacity="0.75"/>
             </linearGradient>
-            <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#0030a0" stopOpacity="0.7"/>
-              <stop offset="50%" stopColor="#0050cc" stopOpacity="0.55"/>
-              <stop offset="100%" stopColor="#0030a0" stopOpacity="0.7"/>
+            <linearGradient id="wg2" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#0028a0" stopOpacity="0.75"/>
+              <stop offset="50%" stopColor="#0045cc" stopOpacity="0.6"/>
+              <stop offset="100%" stopColor="#0028a0" stopOpacity="0.75"/>
             </linearGradient>
-            <linearGradient id="g3" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#c0008a" stopOpacity="0.35"/>
-              <stop offset="50%" stopColor="#e000aa" stopOpacity="0.28"/>
-              <stop offset="100%" stopColor="#c0008a" stopOpacity="0.35"/>
+            <linearGradient id="wg3" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#bb0088" stopOpacity="0.38"/>
+              <stop offset="50%" stopColor="#dd00aa" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#bb0088" stopOpacity="0.38"/>
             </linearGradient>
           </defs>
-          <path d="M0,140 C300,80 600,160 900,110 C1100,80 1300,120 1440,100 L1440,200 L0,200Z" fill="url(#g3)"/>
-          <path d="M0,155 C240,110 480,165 720,140 C960,115 1200,158 1440,140 L1440,200 L0,200Z" fill="url(#g2)"/>
-          <path d="M0,172 C360,150 720,178 1080,162 C1260,155 1360,168 1440,162 L1440,200 L0,200Z" fill="url(#g1)"/>
+          <path d="M0,130 C280,70 580,155 880,105 C1080,75 1300,118 1440,95 L1440,200 L0,200Z" fill="url(#wg3)"/>
+          <path d="M0,150 C230,105 470,158 720,135 C970,112 1210,152 1440,135 L1440,200 L0,200Z" fill="url(#wg2)"/>
+          <path d="M0,168 C350,148 710,172 1080,158 C1270,152 1370,164 1440,158 L1440,200 L0,200Z" fill="url(#wg1)"/>
         </svg>
       </div>
 
-      {/* ── MAIN: scoreboard ── */}
+      {/* ── MAIN ── */}
       <div style={{
         position: "relative", zIndex: 10,
-        width: "100%", maxWidth: "780px",
-        padding: "10px 12px 0",
+        width: "100%", maxWidth: "960px",
+        padding: "12px 16px 24px",
         flex: 1,
+        display: "flex", flexDirection: "column",
       }}>
 
         {/* Title */}
         <div style={{
-          textAlign: "center", marginBottom: "8px",
-          fontSize: "10px", letterSpacing: "0.22em",
-          color: "rgba(120,190,255,0.5)", fontWeight: 600, textTransform: "uppercase",
+          textAlign: "center", marginBottom: "10px",
+          fontSize: "11px", letterSpacing: "0.24em",
+          color: "rgba(110,185,255,0.5)", fontWeight: 600, textTransform: "uppercase",
         }}>
           Eurovision Song Contest 2014 · Grand Final
         </div>
 
-        {/* Table box */}
+        {/* Scoreboard */}
         <div style={{
-          background: "linear-gradient(180deg, rgba(4,14,42,0.96) 0%, rgba(6,18,52,0.94) 100%)",
-          borderRadius: "5px",
-          border: "1px solid rgba(20,65,150,0.45)",
+          background: "linear-gradient(180deg, rgba(3,12,40,0.97) 0%, rgba(5,16,50,0.95) 100%)",
+          borderRadius: "6px 6px 0 0",
+          border: "1px solid rgba(18,60,145,0.5)",
+          borderBottom: "none",
           overflow: "hidden",
-          boxShadow: "0 6px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(60,130,255,0.12)",
+          boxShadow: "0 6px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(55,125,255,0.12)",
         }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-            <div style={{ borderRight: "1px solid rgba(20,65,150,0.3)" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <tbody>{left.map(e => <ScoreRow key={e.id} entry={e} />)}</tbody>
-              </table>
+            <div style={{ borderRight: "1px solid rgba(18,60,145,0.35)" }}>
+              {left.map(e => <ScoreRow key={e.id} entry={e} />)}
             </div>
             <div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <tbody>{right.map(e => <ScoreRow key={e.id} entry={e} />)}</tbody>
-              </table>
+              {right.map(e => <ScoreRow key={e.id} entry={e} />)}
             </div>
           </div>
         </div>
 
-        {/* ── BOTTOM PANEL (attached to table) ── */}
-        <div style={{
-          background: "linear-gradient(180deg, rgba(4,12,38,0.99) 0%, rgba(3,9,28,1) 100%)",
-          borderRadius: "0 0 5px 5px",
-          border: "1px solid rgba(20,65,150,0.45)",
-          borderTop: "none",
-          padding: "8px 10px 6px",
+        {/* ── BOTTOM PANEL — directly attached ── */}
+        <div ref={panelRef} style={{
+          background: "linear-gradient(180deg, rgba(3,9,30,0.99) 0%, rgba(2,7,22,1) 100%)",
+          borderRadius: "0 0 6px 6px",
+          border: "1px solid rgba(18,60,145,0.5)",
+          borderTop: "1px solid rgba(18,60,145,0.3)",
+          padding: "8px 12px 10px",
         }}>
 
-          {/* Voter info */}
+          {/* Voter row */}
           <div style={{
             display: "flex", alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: "7px",
-            paddingBottom: "6px",
-            borderBottom: "1px solid rgba(30,80,160,0.25)",
+            marginBottom: "8px",
+            paddingBottom: "7px",
+            borderBottom: "1px solid rgba(25,70,160,0.25)",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
               <img
-                src={flag(voter.cc)}
-                alt={voter.name}
-                style={{ width: "32px", height: "21px", objectFit: "cover", borderRadius: "2px", boxShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                src={flag(voter.cc)} alt={voter.name}
+                style={{ width: "36px", height: "24px", objectFit: "cover", borderRadius: "2px", boxShadow: "0 1px 5px rgba(0,0,0,0.55)" }}
               />
-              <span style={{ fontSize: "13px", fontWeight: 700, letterSpacing: "0.12em", color: "#a8d8ff" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "0.12em", color: "#a8d8ff" }}>
                 {voter.name}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "10px", letterSpacing: "0.1em", color: "rgba(120,180,255,0.5)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{ fontSize: "11px", letterSpacing: "0.1em", color: "rgba(110,175,255,0.5)" }}>
                 {voterIdx + 1} OF {VOTING_COUNTRIES.length} COUNTRIES VOTING
               </span>
-              <div style={{ width: "90px", height: "3px", background: "rgba(255,255,255,0.1)", borderRadius: "2px" }}>
+              <div style={{ width: "100px", height: "3px", background: "rgba(255,255,255,0.1)", borderRadius: "2px", overflow: "hidden" }}>
                 <div style={{
                   height: "100%",
                   width: `${(voterIdx / VOTING_COUNTRIES.length) * 100}%`,
-                  background: "linear-gradient(90deg, #0070ff, #9030ff)",
+                  background: "linear-gradient(90deg, #0070ff, #8820ff)",
                   borderRadius: "2px", transition: "width 0.5s ease",
                 }}/>
               </div>
             </div>
           </div>
 
-          {/* Points bubbles */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-            {POINTS_ORDER.map((pts) => {
-              const used    = usedPts.includes(pts);
-              const isNext  = pts === nextPt;
-              const isBig   = pts === 10 || pts === 12;
+          {/* Points row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+            {POINTS_ORDER.map((pts, idx) => {
+              const used   = awardedCount[voterIdx] !== undefined && idx < (awardedCount[voterIdx] ?? 0);
+              const isNext = pts === nextPt;
+              const isBig  = pts === 12 || pts === 10;
 
               return (
                 <div key={pts} style={{
                   position: "relative",
-                  width:  isBig ? "56px" : "48px",
-                  height: isBig ? "50px" : "43px",
-                  borderRadius: "6px",
+                  width:  isBig ? "60px" : "50px",
+                  height: isBig ? "54px" : "46px",
+                  borderRadius: "7px",
                   background: used
                     ? "rgba(255,255,255,0.03)"
                     : isNext
-                      ? "linear-gradient(160deg, #2268d4 0%, #0e3d9e 45%, #092878 100%)"
-                      : "linear-gradient(160deg, rgba(18,52,120,0.75) 0%, rgba(8,28,75,0.85) 100%)",
+                      ? "linear-gradient(160deg, #2370e0 0%, #0e3ea8 45%, #0a2c85 100%)"
+                      : "linear-gradient(160deg, rgba(16,48,118,0.8) 0%, rgba(7,26,72,0.88) 100%)",
                   border: isNext
-                    ? "1.5px solid rgba(100,175,255,0.75)"
+                    ? "1.5px solid rgba(100,180,255,0.8)"
                     : used
                       ? "1px solid rgba(255,255,255,0.04)"
-                      : "1px solid rgba(35,90,190,0.35)",
+                      : "1px solid rgba(30,85,190,0.38)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: isBig ? "19px" : "16px",
+                  fontSize: isBig ? "20px" : "16px",
                   fontWeight: 800,
-                  color: used ? "rgba(255,255,255,0.12)" : isNext ? "#ffffff" : "rgba(140,200,255,0.65)",
+                  color: used ? "rgba(255,255,255,0.1)" : isNext ? "#ffffff" : "rgba(130,195,255,0.65)",
                   boxShadow: isNext
-                    ? "0 0 14px rgba(0,100,255,0.6), 0 0 28px rgba(0,60,200,0.3), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.3)"
-                    : "0 2px 6px rgba(0,0,0,0.45)",
-                  transition: "all 0.25s ease",
+                    ? "0 0 16px rgba(0,110,255,0.65), 0 0 32px rgba(0,60,200,0.35), inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.3)"
+                    : "0 2px 6px rgba(0,0,0,0.5)",
                   transform: isNext ? "scale(1.1)" : "scale(1)",
-                  cursor: "default",
+                  transition: "all 0.25s ease",
                   overflow: "hidden",
+                  cursor: "default",
                 }}>
-                  {/* Crystal shine top-left */}
+                  {/* Crystal shine */}
                   {isNext && (
                     <div style={{
-                      position: "absolute", top: 0, left: 0, right: "45%", height: "45%",
-                      background: "linear-gradient(135deg, rgba(255,255,255,0.22) 0%, transparent 100%)",
-                      borderRadius: "5px 0 0 0", pointerEvents: "none",
+                      position: "absolute", top: 0, left: 0, right: "45%", height: "44%",
+                      background: "linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 100%)",
+                      borderRadius: "6px 0 0 0", pointerEvents: "none",
                     }}/>
                   )}
-                  <span style={{ position: "relative", zIndex: 1 }}>{pts}</span>
+                  <span style={{ position: "relative", zIndex: 1, textDecoration: used ? "line-through" : "none", opacity: used ? 0.15 : 1 }}>
+                    {pts}
+                  </span>
                 </div>
               );
             })}
           </div>
+
         </div>
+        {/* end bottom panel */}
 
       </div>
 
-      {/* Spacer so content isn't hidden under fixed bar on mobile — not needed now since panel is inline */}
-      <div style={{ height: "20px" }} />
-
       {/* ── FLYING BALLS ── */}
       {flyBalls.map(ball => {
-        const size = ball.pts === 12 ? 48 : ball.pts === 10 ? 42 : 34;
+        const sz = ball.pts === 12 ? 52 : ball.pts === 10 ? 44 : 36;
         return (
           <div key={ball.id} style={{
             position: "fixed",
-            left: ball.x1,
-            top: ball.y1,
+            left: ball.x1, top: ball.y1,
             width: 0, height: 0,
-            zIndex: 500,
-            pointerEvents: "none",
+            zIndex: 500, pointerEvents: "none",
             "--dx": `${ball.x2 - ball.x1}px`,
             "--dy": `${ball.y2 - ball.y1}px`,
-            animation: "esc-fly 0.75s cubic-bezier(0.4,0,0.6,1) forwards",
+            animation: "escFly 0.7s cubic-bezier(0.4,0,0.55,1) forwards",
           } as React.CSSProperties & Record<string, string>}>
             <div style={{
-              width: size, height: size,
-              borderRadius: "50%",
+              width: sz, height: sz, borderRadius: "50%",
               transform: "translate(-50%, -50%)",
               background: ball.pts === 12
-                ? "radial-gradient(circle at 38% 32%, #fff8c0 0%, #FFD700 35%, #FF8800 80%, #cc5500 100%)"
+                ? "radial-gradient(circle at 36% 30%, #fff7b0 0%, #FFD700 32%, #FF8800 75%, #cc4400 100%)"
                 : ball.pts === 10
-                  ? "radial-gradient(circle at 38% 32%, #ffff99 0%, #FFD000 40%, #FF9900 100%)"
-                  : "radial-gradient(circle at 38% 32%, #d0f0ff 0%, #40a8ff 40%, #0050cc 100%)",
+                  ? "radial-gradient(circle at 36% 30%, #ffffa0 0%, #FFCC00 38%, #FF9900 100%)"
+                  : "radial-gradient(circle at 36% 30%, #cceeff 0%, #38aaff 38%, #0044cc 100%)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "'Montserrat', sans-serif",
               fontWeight: 900,
-              fontSize: ball.pts >= 10 ? "19px" : "15px",
+              fontSize: ball.pts >= 10 ? "20px" : "15px",
               color: "#fff",
               boxShadow: ball.pts === 12
-                ? "0 0 22px rgba(255,180,0,1), 0 0 44px rgba(255,80,0,0.7)"
+                ? "0 0 24px rgba(255,180,0,1), 0 0 48px rgba(255,80,0,0.8)"
                 : ball.pts === 10
-                  ? "0 0 16px rgba(255,200,0,1), 0 0 32px rgba(255,140,0,0.5)"
-                  : "0 0 14px rgba(0,140,255,0.9), 0 0 28px rgba(0,80,200,0.5)",
+                  ? "0 0 18px rgba(255,200,0,1), 0 0 36px rgba(255,140,0,0.6)"
+                  : "0 0 14px rgba(30,140,255,1), 0 0 28px rgba(0,80,220,0.6)",
               textShadow: "0 1px 4px rgba(0,0,0,0.7)",
             }}>
               {ball.pts}
@@ -520,30 +586,28 @@ export default function Index() {
         );
       })}
 
-      {/* ── DOUZE POINTS overlay ── */}
+      {/* ── DOUZE POINTS ── */}
       {douze && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 600,
           display: "flex", alignItems: "center", justifyContent: "center",
           pointerEvents: "none",
-          background: "radial-gradient(ellipse at center, rgba(255,160,0,0.1) 0%, transparent 60%)",
+          background: "radial-gradient(ellipse at center, rgba(255,150,0,0.1) 0%, transparent 60%)",
         }}>
-          <div style={{ animation: "esc-douze 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards", textAlign: "center" }}>
+          <div style={{ animation: "escDouze 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards", textAlign: "center" }}>
             <div style={{
-              fontSize: "clamp(48px,10vw,92px)",
+              fontSize: "clamp(50px,10vw,95px)",
               fontWeight: 900,
               letterSpacing: "0.04em",
               fontFamily: "'Montserrat', sans-serif",
-              background: "linear-gradient(180deg, #fffbc0 0%, #FFD700 40%, #FF9500 100%)",
+              background: "linear-gradient(180deg, #fffbc0 0%, #FFD700 42%, #FF9300 100%)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
-              filter: "drop-shadow(0 0 28px rgba(255,190,0,0.9))",
+              filter: "drop-shadow(0 0 30px rgba(255,185,0,0.95))",
               lineHeight: 1,
-            }}>
-              DOUZE POINTS!
-            </div>
-            <div style={{ fontSize: "15px", letterSpacing: "0.4em", color: "rgba(255,215,80,0.65)", marginTop: "10px" }}>
+            }}>DOUZE POINTS!</div>
+            <div style={{ fontSize: "16px", letterSpacing: "0.45em", color: "rgba(255,210,70,0.6)", marginTop: "12px" }}>
               ✦ ✦ ✦
             </div>
           </div>
@@ -551,18 +615,18 @@ export default function Index() {
       )}
 
       <style>{`
-        @keyframes esc-fly {
+        @keyframes escFly {
           0%   { transform: translate(0,0); opacity: 1; }
-          70%  { opacity: 1; }
+          75%  { opacity: 1; }
           100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
         }
-        @keyframes esc-douze {
-          0%   { transform: scale(0.35) rotate(-2deg); opacity: 0; }
-          65%  { transform: scale(1.07) rotate(1deg); opacity: 1; }
+        @keyframes escDouze {
+          0%   { transform: scale(0.3) rotate(-3deg); opacity: 0; }
+          65%  { transform: scale(1.08) rotate(1deg); opacity: 1; }
           100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
-        tr:hover > td {
-          background: rgba(0,70,180,0.18) !important;
+        div[style*="cursor: pointer"]:hover {
+          filter: brightness(1.12);
         }
       `}</style>
     </div>
