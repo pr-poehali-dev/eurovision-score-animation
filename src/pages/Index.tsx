@@ -206,6 +206,32 @@ export default function Index() {
     });
   }, []);
 
+  // Медленный FLIP — для одновременного перемещения всех строк 1-7
+  const runFlipSlow = useCallback((old: Record<string, DOMRect>) => {
+    if (!containerRef.current) return;
+    containerRef.current.querySelectorAll<HTMLElement>("[data-id]").forEach(el => {
+      const id = el.getAttribute("data-id")!;
+      const o  = old[id]; if (!o) return;
+      const n  = el.getBoundingClientRect();
+      const dx = o.left - n.left;
+      const dy = o.top  - n.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+      el.style.position   = "relative";
+      el.style.zIndex     = "200";
+      el.style.transform  = `translate(${dx}px,${dy}px)`;
+      el.style.transition = "none";
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.transform  = "translate(0,0)";
+        // Медленно и плавно — 2.2s
+        el.style.transition = "transform 2.2s cubic-bezier(0.25,0.46,0.45,0.94)";
+        setTimeout(() => {
+          el.style.zIndex = ""; el.style.position = "";
+          el.style.transform = ""; el.style.transition = "";
+        }, 2400);
+      }));
+    });
+  }, []);
+
   // ── Подтверждение выбора 1-7 ──────────────────────────────────────────────
   // После confirm → показываем "preconfirm" экран со сводкой, потом анимируем влёт
   const handlePreConfirm = useCallback((votes: PreVote[]) => {
@@ -221,12 +247,17 @@ export default function Index() {
     setTableVisible(false);
     setTimeout(() => setTableVisible(true), 80);
 
-    // Применяем баллы 1-7 один за другим с задержкой
-    votes.forEach((vote, i) => {
-      setTimeout(() => {
-        const old = savePositions();
-        setEntries(prev => {
-          const updated = prev.map(e =>
+    // Все 7 баллов применяются одновременно после короткой паузы,
+    // но перестройка таблицы происходит медленно и плавно (FLIP 1.8s)
+    const APPLY_DELAY = 600; // пауза перед применением, чтобы таблица успела появиться
+
+    setTimeout(() => {
+      const old = savePositions();
+
+      setEntries(prev => {
+        let updated = [...prev];
+        votes.forEach(vote => {
+          updated = updated.map(e =>
             e.id === vote.countryId
               ? {
                   ...e,
@@ -238,20 +269,23 @@ export default function Index() {
                 }
               : e
           );
-          return sortEntries(updated);
         });
-        requestAnimationFrame(() => requestAnimationFrame(() => runFlip(old)));
-        // Сбросить подсветку через 1.5s
-        setTimeout(() => {
-          setEntries(prev => prev.map(e =>
-            e.id === vote.countryId && e.flashedByVoter === voterIdx
-              ? { ...e, flashedByVoter: null, coveredPts: vote.pts } // coveredPts остаётся до конца
-              : e
-          ));
-        }, 1500);
-      }, i * 700); // каждые 700ms — один балл влетает
-    });
-  }, [preVotes, voterIdx, savePositions, runFlip]);
+        return sortEntries(updated);
+      });
+
+      // Запускаем медленный FLIP для всех строк сразу
+      requestAnimationFrame(() => requestAnimationFrame(() => runFlipSlow(old)));
+
+      // Сбросить подсветку через 3s
+      setTimeout(() => {
+        setEntries(prev => prev.map(e =>
+          e.flashedByVoter === voterIdx
+            ? { ...e, flashedByVoter: null }
+            : e
+        ));
+      }, 3000);
+    }, APPLY_DELAY);
+  }, [preVotes, voterIdx, savePositions, runFlipSlow]);
 
   // ── Отмена последнего голоса HIGH (8/10/12) ───────────────────────────────
   const handleUndoHigh = useCallback(() => {
