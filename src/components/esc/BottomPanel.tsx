@@ -55,7 +55,7 @@ export default function BottomPanel({ voterIdx, count, nextPt, panelRef }: Props
         {POINTS_ORDER.map((pts, idx) => {
           const used   = idx < count;
           const isNext = pts === nextPt;
-          const isBig  = pts === 12 || pts === 10;
+          const isBig  = pts === 12 || pts === 10 || pts === 8;
           return (
             <div key={pts} style={{
               position: "relative",
